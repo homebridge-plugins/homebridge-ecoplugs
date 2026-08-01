@@ -129,6 +129,20 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         kabSocket.setBindPort(bindPort);
         this.log.info(`KAB source bind port set to ${bindPort}`);
 
+        // optional bind address for all outgoing/listening sockets. On
+        // multi-homed hosts (e.g. a Mac with both Ethernet and Wi-Fi live on
+        // the same subnet, or Wi-Fi holding a stale IP while disassociated)
+        // a wildcard bind lets the OS pick the outgoing interface per-send,
+        // which can intermittently fail with EHOSTUNREACH. Set this to the
+        // host's LAN IP to pin all EcoPlug traffic to one interface.
+        const bindAddress = typeof cfg.bindAddress === 'string' && cfg.bindAddress.trim()
+            ? cfg.bindAddress.trim()
+            : undefined;
+        kabSocket.setBindAddress(bindAddress);
+        if (bindAddress) {
+            this.log.info(`KAB/legacy sockets pinned to local address ${bindAddress}`);
+        }
+
         const configuredDevices: DeviceConfig[] = [];
         const rawDevices = Array.isArray(cfg.devices)
             ? (cfg.devices as Array<Partial<DeviceConfig> | undefined>)
@@ -174,6 +188,7 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             this.incomingPort,
             this.localOnly,
             (msg) => this.log.debug(msg),
+            bindAddress,
         );
 
         this.log.debug('EcoPlugPlatform initialised');
