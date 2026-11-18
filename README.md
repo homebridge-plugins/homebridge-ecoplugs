@@ -132,6 +132,7 @@ Use this when you want immediate startup registration without waiting for a beac
 | `deviceRemoveTimeout`  | `0`     | Remove accessory after this many seconds without response (`0` disables)                                |
 | `kabMaxFailures`       | `15`    | **(KAB only)** Give up on additional status queries after this many consecutive timeouts; resets on success or discovery |
 | `kabBindPort`          | `9090`  | **(KAB only)** UDP source port to bind for outgoing commands (`0` lets OS choose ephemeral port)       |
+| `bindAddress`          | *(unset)* | IPv4 address of the local network interface to use for KAB commands and legacy discovery/status. Leave unset to let the OS choose. See [multiple network interfaces](#troubleshooting) |
 
 ### Per-device options (`devices[]`)
 
@@ -204,6 +205,11 @@ sudo ufw allow out 6000/udp   # KAB fallback port A
 - Device disappears frequently:
   - Increase `deviceInactiveTimeout`
   - Leave `deviceRemoveTimeout` at `0` unless you explicitly want auto-removal
+- Intermittent `EHOSTUNREACH` errors, or devices only found some of the time, on a host with **more than one network interface** on the same subnet (for example Ethernet plus Wi-Fi, or Wi-Fi that kept a stale IP after dropping off):
+  - Set `bindAddress` (under Advanced Options) to the IPv4 address of the interface that actually reaches the devices, e.g. `"bindAddress": "192.168.1.10"`
+  - Use a static IP or DHCP reservation for that address and restart Homebridge if it ever changes
+  - The address must belong to the machine running Homebridge; an invalid or unassigned address is reported in the log and the affected sockets will not work until it is fixed
+  - KAB beacons are broadcasts, so the beacon listener always listens on all interfaces regardless of this setting
 
 ## Credits
 

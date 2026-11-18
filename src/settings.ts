@@ -108,11 +108,12 @@ export interface EcoPlugConfig {
     /** Bind port for outgoing KAB commands (0 for ephemeral). */
     kabBindPort?: number;
     /**
-     * Local interface address to bind all outgoing/listening UDP sockets to.
+     * Local IPv4 address to bind the KAB command socket and the legacy socket to.
      * Leave unset for the default wildcard bind. Useful on multi-homed hosts
      * where a wildcard bind can cause the OS to intermittently route traffic
      * out the wrong (or a stale/disconnected) interface, producing
-     * EHOSTUNREACH errors.
+     * EHOSTUNREACH errors.  The KAB beacon listener (port 10228) is never pinned
+     * because beacons are broadcasts.
      */
     bindAddress?: string;
     /** Suppress the beacon acknowledgment packet.  Useful for buggy devices. */

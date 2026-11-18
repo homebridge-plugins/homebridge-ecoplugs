@@ -18,6 +18,8 @@ import type {
     CharacteristicValue,
 } from 'homebridge';
 
+import { isIPv4 } from 'net';
+
 import {
     PLATFORM_NAME,
     PLUGIN_NAME,
@@ -132,18 +134,29 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         // surface socket bind failures at warn level (the regular KAB socket log is debug-only)
         kabSocket.setErrorLogger((msg) => this.log.warn(msg));
 
-        // optional bind address for all outgoing/listening sockets. On
+        // optional bind address for the KAB command socket and the legacy socket. On
         // multi-homed hosts (e.g. a Mac with both Ethernet and Wi-Fi live on
         // the same subnet, or Wi-Fi holding a stale IP while disassociated)
         // a wildcard bind lets the OS pick the outgoing interface per-send,
         // which can intermittently fail with EHOSTUNREACH. Set this to the
-        // host's LAN IP to pin all EcoPlug traffic to one interface.
-        const bindAddress = typeof cfg.bindAddress === 'string' && cfg.bindAddress.trim()
-            ? cfg.bindAddress.trim()
-            : undefined;
+        // host's LAN IP to pin that traffic to one interface.  The KAB beacon
+        // listener is deliberately NOT pinned: beacons are broadcasts, which a
+        // socket bound to a single unicast address would never receive.
+        const rawBindAddress = typeof cfg.bindAddress === 'string' ? cfg.bindAddress.trim() : '';
+        let bindAddress: string | undefined;
+        if (rawBindAddress) {
+            if (isIPv4(rawBindAddress)) {
+                bindAddress = rawBindAddress;
+            } else {
+                this.log.warn(
+                    `Ignoring bindAddress "${rawBindAddress}": it must be an IPv4 address (e.g. 192.168.1.10); ` +
+                    'using the default network binding instead',
+                );
+            }
+        }
         kabSocket.setBindAddress(bindAddress);
         if (bindAddress) {
-            this.log.info(`KAB/legacy sockets pinned to local address ${bindAddress}`);
+            this.log.info(`KAB command and legacy sockets pinned to local address ${bindAddress}`);
         }
 
         const configuredDevices: DeviceConfig[] = [];
