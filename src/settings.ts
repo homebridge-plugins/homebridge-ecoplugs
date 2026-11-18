@@ -66,7 +66,7 @@ export interface DeviceConfig {
      * updated as soon as a beacon is received from the device.
      */
     host?: string;
-    /** Override command destination port on the device (default: 1022). */
+    /** Override command destination port on the device (default: 1022 for KAB, 80 for legacy). */
     commandPort?: number;
     /** Per-device override for maximum consecutive status failures. */
     kabMaxFailures?: number;

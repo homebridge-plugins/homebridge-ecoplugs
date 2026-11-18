@@ -11,6 +11,7 @@
  * optionally :5888).
  */
 
+import { LEGACY_DEFAULT_PORT } from '../../settings.js';
 import type { DeviceInfo, StatusMessage } from '../types.js';
 
 // ── Message length constants ──────────────────────────────────────────────────
@@ -125,7 +126,7 @@ export function parseDiscoveryResponse(msg: Buffer, remoteHost: string): DeviceI
             id:       id   || `LEGACY-${remoteHost}`,
             name,
             host,
-            port:     80,
+            port:     LEGACY_DEFAULT_PORT,
             protocol: 'legacy',
             version,
         };

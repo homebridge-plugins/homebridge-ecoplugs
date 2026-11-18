@@ -396,6 +396,12 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             if (override.serviceType) {
                 (device as any).serviceType = override.serviceType;
             }
+            // Legacy devices are commanded at `device.port`, and discovery always
+            // reports the default (80).  An explicit commandPort must win over that,
+            // otherwise every discovery cycle would silently undo the override.
+            if (override.commandPort && device.protocol === 'legacy') {
+                device.port = override.commandPort;
+            }
             // any per-device skipDiscovery/useBeacon flags are ignored; plugin
             // behaviour is fixed.
         }
@@ -418,7 +424,9 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
                 this.log.info(`Updated IP for ${device.id}: ${existing.context.host} -> ${device.host} (${source})`);
                 existing.context.host = device.host;
                 existing.context.port = device.port;
-            } else if (existing.context.port !== device.port) {
+            } else if (device.protocol === 'legacy' && existing.context.port !== device.port) {
+                // Only legacy devices are commanded at `context.port`; KAB sends use
+                // kabLanPort / kabCommandPort, so refreshing it there only adds log noise.
                 // host unchanged but port differs — this previously never
                 // refreshed, so a stale/wrong port (e.g. from a protocol
                 // mismatch at seed time) could persist across every future
