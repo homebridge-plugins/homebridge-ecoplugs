@@ -11,6 +11,7 @@ All notable changes to `@homebridge-plugins/homebridge-ecoplugs` will be documen
 - an explicit per-device `commandPort` is no longer overwritten by legacy discovery
 - fix KAB commands and beacon ACKs never being sent on macOS, where `SO_REUSEPORT` is not supported
 - report KAB socket bind failures at warn level instead of leaving commands hanging
+- log failed legacy sends and discovery probes (visible with debug logging) instead of dropping them silently
 - add tests for command ports, KAB socket binding and `bindAddress`
 
 ## v1.0.3 (2026-11-18)

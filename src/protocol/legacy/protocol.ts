@@ -160,6 +160,9 @@ export function createLegacyManager(
                     if (remaining > 1) {
                         setTimeout(() => attempt(remaining - 1), COMMAND_TIMEOUT_MS);
                     } else {
+                        // sends are fire-and-forget, so without this a failure (e.g. EHOSTUNREACH)
+                        // would leave no trace at all
+                        log?.(`Legacy send to ${device.host}:${device.port} failed after ${retries} attempt(s): ${err.message}`);
                         callback?.(err);
                     }
                 }
@@ -177,6 +180,7 @@ export function createLegacyManager(
         const attempt = (remaining: number) => {
             socket.send(probe, 0, 128, port, '255.255.255.255', (err) => {
                 if (err) {
+                    log?.(`Legacy discovery probe to 255.255.255.255:${port} failed: ${err.message}`);
                     callback(err);
                 } else if (remaining > 1) {
                     setTimeout(() => attempt(remaining - 1), DISCOVERY_TIMEOUT_MS);

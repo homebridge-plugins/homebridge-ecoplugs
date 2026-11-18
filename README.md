@@ -210,6 +210,8 @@ sudo ufw allow out 6000/udp   # KAB fallback port A
   - Use a static IP or DHCP reservation for that address and restart Homebridge if it ever changes
   - The address must belong to the machine running Homebridge; an invalid or unassigned address is reported in the log and the affected sockets will not work until it is fixed
   - KAB beacons are broadcasts, so the beacon listener always listens on all interfaces regardless of this setting
+  - If legacy devices stop being discovered, or stop reporting status, after you set `bindAddress`, remove the setting again. A socket bound to one address cannot receive broadcast packets, so firmware that replies by broadcast would be missed. Please open an issue with the device model and firmware if this happens
+  - With debug logging enabled (`"debug": true`) failed sends are logged, e.g. `Legacy send to 192.168.1.50:80 failed ... EHOSTUNREACH`, which shows whether the setting helped
 
 ## Credits
 
