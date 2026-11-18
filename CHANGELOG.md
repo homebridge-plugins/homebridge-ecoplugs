@@ -2,6 +2,17 @@
 
 All notable changes to `@homebridge-plugins/homebridge-ecoplugs` will be documented in this file.
 
+## v1.1.0 (unreleased)
+
+### Changes
+
+- add an optional `bindAddress` setting (Advanced Options) to pin the KAB command socket and the legacy socket to one network interface, fixing intermittent `EHOSTUNREACH` on hosts with more than one interface on the same subnet; an invalid (non-IPv4) address is ignored with a warning (thanks @marckagan, #1)
+- fix static-IP legacy devices (`protocol: "legacy"`) being commanded on the KAB port (1022) instead of the legacy port (80), and correct an already-cached wrong port (thanks @marckagan, #2)
+- an explicit per-device `commandPort` is no longer overwritten by legacy discovery
+- fix KAB commands and beacon ACKs never being sent on macOS, where `SO_REUSEPORT` is not supported
+- report KAB socket bind failures at warn level instead of leaving commands hanging
+- add tests for command ports, KAB socket binding and `bindAddress`
+
 ## v1.0.3 (2026-11-18)
 
 ### Changes
