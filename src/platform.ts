@@ -30,6 +30,7 @@ import {
     DEFAULT_ENABLED,
     KAB_COMMAND_PORT,
     KAB_DEVICE_PORT,
+    LEGACY_DEFAULT_PORT,
     type EcoPlugConfig,
     type DeviceConfig,
     DEFAULT_KAB_COMMAND_TIMEOUT_MS,
@@ -264,12 +265,18 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
                 continue;
             }
             const idInt = parseDeviceIdInt(d.id);
+            const isLegacy = d.protocol === 'legacy';
             const device: DeviceInfo = {
                 id:             d.id,
                 name:           d.id,           // updated when beacon arrives
                 host:           d.host,
-                port:           d.commandPort ?? KAB_DEVICE_PORT,
-                protocol:       (d.protocol === 'legacy' ? 'legacy' : 'kab'),
+                // Default port must match the chosen protocol — previously this
+                // always fell back to the KAB device port (1022) even for
+                // protocol:"legacy" devices, silently sending legacy-formatted
+                // packets to the wrong port with no error (legacy setPower/
+                // getStatus are fire-and-forget, so the failure was invisible).
+                port:           d.commandPort ?? (isLegacy ? LEGACY_DEFAULT_PORT : KAB_DEVICE_PORT),
+                protocol:       (isLegacy ? 'legacy' : 'kab'),
                 kabDeviceIdInt: isNaN(idInt) ? 0 : idInt,
                 kabKey:         d.kabKey   ?? '',
                 kabPass:        d.kabPass  ?? '',
@@ -395,6 +402,13 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             if (existing.context.host !== device.host) {
                 this.log.info(`Updated IP for ${device.id}: ${existing.context.host} -> ${device.host} (${source})`);
                 existing.context.host = device.host;
+                existing.context.port = device.port;
+            } else if (existing.context.port !== device.port) {
+                // host unchanged but port differs — this previously never
+                // refreshed, so a stale/wrong port (e.g. from a protocol
+                // mismatch at seed time) could persist across every future
+                // discovery/beacon update as long as the IP stayed the same.
+                this.log.info(`Updated port for ${device.id}: ${existing.context.port} -> ${device.port} (${source})`);
                 existing.context.port = device.port;
             } else {
                 this.log.debug(`Seen known device ${device.id} via ${source} @ ${device.host}`);
