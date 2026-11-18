@@ -76,6 +76,14 @@
           "functionBody": "return model.advanceOptions === true;"
         }
       },
+      "bindAddress": {
+        "title": "Local Bind Address",
+        "type": "string",
+        "description": "Pin all outgoing/listening UDP sockets to this local interface IP (e.g. your host's wired LAN address). Leave blank to let the OS choose. On multi-homed hosts — e.g. a machine with both Ethernet and Wi-Fi live on the same subnet, or a Wi-Fi adapter that keeps a stale IP after losing association — a wildcard bind can cause the OS to intermittently route discovery/status traffic out the wrong (or dead) interface, producing EHOSTUNREACH errors. Setting this to your primary interface's IP makes socket behavior deterministic.",
+        "condition": {
+          "functionBody": "return model.advanceOptions === true;"
+        }
+      },
       "kabMaxFailures": {
         "title": "KAB Max Consecutive Failures",
         "type": "number",
