@@ -45,11 +45,21 @@ export interface LegacyManager {
  * @param incomingPort  UDP port Homebridge listens on for device messages.
  * @param localOnly     When true, silently ignore messages from public IPs.
  * @param log           Optional logger.
+ * @param bindAddress   Optional local address to bind the socket to. Leave
+ *                       undefined for the default wildcard bind. On
+ *                       multi-homed hosts (e.g. a Mac with both Ethernet and
+ *                       Wi-Fi live on the same subnet) a wildcard bind lets
+ *                       the OS pick the outgoing interface per-send, which
+ *                       can intermittently route broadcast/unicast traffic
+ *                       out a stale or disconnected interface and fail with
+ *                       EHOSTUNREACH. Pin to a specific interface address to
+ *                       avoid that.
  */
 export function createLegacyManager(
     incomingPort: number,
     localOnly: boolean,
     log?: (msg: string) => void,
+    bindAddress?: string,
 ): LegacyManager {
     const socket = dgram.createSocket('udp4');
     let statusCallback: StatusCallback | null = null;
@@ -124,7 +134,11 @@ export function createLegacyManager(
 
             socket.once('error', onError);
             socket.once('listening', onListening);
-            socket.bind(port);
+            if (bindAddress) {
+                socket.bind(port, bindAddress);
+            } else {
+                socket.bind(port);
+            }
         });
 
         return bindingPromise;

@@ -25,12 +25,35 @@ class KabSocketManager {
      * ephemeral port. */
     private bindPort: number = KAB_COMMAND_PORT;
 
+    /** Local address to bind the socket to. Undefined means the OS chooses
+     * (wildcard bind), which is ambiguous on multi-homed hosts where more
+     * than one interface shares a subnet with the target devices — the OS
+     * may then route sends out whichever interface it resolves at send
+     * time, including a stale/disassociated one, causing intermittent
+     * EHOSTUNREACH. Set explicitly to pin all KAB traffic to one interface. */
+    private bindAddress: string | undefined = undefined;
+
     /** Override the source port used for KAB commands.  Call before sending
      * any commands (e.g. from platform initialization).  If a socket is
      * already bound we tear it down so the next call to getSocket() will bind
      * again to the new port. */
     public setBindPort(port: number) {
         this.bindPort = port;
+        if (this.socket) {
+            try { this.socket.close(); } catch {
+                // ignore errors when closing the socket; nothing we can do here
+            }
+            this.socket = null;
+            this.bindingData = null;
+        }
+    }
+
+    /** Override the local address used for KAB commands. Call before sending
+     * any commands (e.g. from platform initialization).  If a socket is
+     * already bound we tear it down so the next call to getSocket() will bind
+     * again to the new address. */
+    public setBindAddress(address: string | undefined) {
+        this.bindAddress = address;
         if (this.socket) {
             try { this.socket.close(); } catch {
                 // ignore errors when closing the socket; nothing we can do here
@@ -137,14 +160,20 @@ class KabSocketManager {
                 this.log('KAB rx dropped: no group accepted the packet');
             });
 
-            sock.bind(this.bindPort, () => {
+            const onBound = () => {
                 this.socket = sock;
                 this.socket.unref(); // don't block node from exiting
                 this.currentError = null;
                 const addr = this.socket.address();
                 this.log(`KAB global socket bound to ${addr.address}:${addr.port}`);
                 resolve();
-            });
+            };
+
+            if (this.bindAddress) {
+                sock.bind(this.bindPort, this.bindAddress, onBound);
+            } else {
+                sock.bind(this.bindPort, onBound);
+            }
         });
 
         await this.bindingData;
