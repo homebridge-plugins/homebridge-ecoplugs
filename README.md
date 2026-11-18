@@ -42,8 +42,8 @@
 
 | Requirement | Version      |
 |-------------|--------------|
-| Node.js     | 22, 24, 25   |
-| Homebridge  | v1, v2       |
+| Node.js     | 22 (≥ 22.12), 24, 26 |
+| Homebridge  | v1 (≥ 1.8), v2       |
 
 ## Installation
 
