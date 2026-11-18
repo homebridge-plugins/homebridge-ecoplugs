@@ -131,6 +131,7 @@ Use this when you want immediate startup registration without waiting for a beac
 | `deviceRemoveTimeout`  | `0`     | Remove accessory after this many seconds without response (`0` disables)                                |
 | `kabMaxFailures`       | `15`    | **(KAB only)** Give up on additional status queries after this many consecutive timeouts; resets on success or discovery |
 | `kabBindPort`          | `9090`  | **(KAB only)** UDP source port to bind for outgoing commands (`0` lets OS choose ephemeral port)       |
+| `defaultServiceType`   | `switch` | HomeKit service for newly added devices: `switch` or `outlet`. Devices already in HomeKit keep their current type |
 | `bindAddress`          | *(unset)* | IPv4 address of the local network interface to use for KAB commands and legacy discovery/status. Leave unset to let the OS choose. See [multiple network interfaces](#troubleshooting) |
 
 ### Per-device options (`devices[]`)
@@ -140,6 +141,7 @@ Use this when you want immediate startup registration without waiting for a beac
 | `id`          | yes      | Device ID, e.g. `ECO-78ABCDEF`                                      |
 | `host`        | no       | Static IP to seed device at startup                                 |
 | `protocol`    | no       | `auto` (default), `legacy`, or `kab`                                |
+| `serviceType` | no       | `switch` or `outlet` for this device (default: `defaultServiceType`)  |
 | `commandPort` | no       | Override the port the device listens on for commands (default `1022` KAB, `80` legacy). This is the device's port, not the local source port (`kabBindPort`); normally leave it unset |
 | `kabKey`      | no       | KAB credential key (usually auto-populated from beacon)             |
 | `kabPass`     | no       | KAB command password (default `111111`)                             |

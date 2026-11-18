@@ -30,6 +30,7 @@ import {
     DEFAULT_DEVICE_REMOVE_TIMEOUT,
     DEFAULT_LOCAL_ONLY,
     DEFAULT_ENABLED,
+    DEFAULT_SERVICE_TYPE,
     KAB_COMMAND_PORT,
     KAB_DEVICE_PORT,
     LEGACY_DEFAULT_PORT,
@@ -122,8 +123,20 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         this.kabDiscoveryAttemptsGlobally = cfg.kabDiscoveryAttempts ?? DEFAULT_KAB_DISCOVERY_ATTEMPTS;
         this.kabMaxFailuresGlobally = cfg.kabMaxFailures ?? DEFAULT_KAB_MAX_FAILURES;
         this.skipBeaconAckGlobally = cfg.kabSkipBeaconAck ?? false;
-        // choose default service type with graceful fallback
-        this.defaultServiceType = (cfg.defaultServiceType === 'switch' ? 'switch' : 'outlet');
+        // Service type for newly added devices.  When unset this matches the default the
+        // config UI shows (switch); it previously fell back to outlet, so a config saved
+        // without the UI got outlets while the UI promised switches.  Accessories that are
+        // already cached keep the type stored with them (see configureAccessory).
+        const rawDefaultType = cfg.defaultServiceType as string | undefined;
+        if (rawDefaultType === 'outlet' || rawDefaultType === 'switch') {
+            this.defaultServiceType = rawDefaultType;
+        } else if (rawDefaultType === undefined || rawDefaultType === '') {
+            this.defaultServiceType = DEFAULT_SERVICE_TYPE;
+        } else {
+            // e.g. "Lightbulb", which older config forms offered but was never supported
+            this.log.warn(`Unsupported defaultServiceType "${rawDefaultType}" (use "outlet" or "switch"); using outlet`);
+            this.defaultServiceType = 'outlet';
+        }
         // beacon updates are always enabled now; there is no longer any
         // configuration toggle for polling.  periodic queries will only
         // target legacy devices.
@@ -176,6 +189,11 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
                 continue;
             }
 
+            const svc = rawDevice?.serviceType as string | undefined;
+            if (svc && svc !== 'outlet' && svc !== 'switch') {
+                this.log.warn(`Unsupported serviceType "${svc}" for ${id} (use "outlet" or "switch"); using outlet`);
+            }
+
             const host = typeof rawDevice?.host === 'string' ? rawDevice.host.trim() : undefined;
             configuredDevices.push({
                 ...(rawDevice as DeviceConfig),
@@ -222,7 +240,15 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         if (override && override.serviceType) {
             accessory.context.serviceType = override.serviceType;
         } else if (!accessory.context.serviceType) {
-            accessory.context.serviceType = this.defaultServiceType;
+            // No stored type (cached by an old version): keep whatever service the accessory
+            // already has rather than applying the default, which would replace it in HomeKit.
+            if (accessory.getService(this.Service.Switch)) {
+                accessory.context.serviceType = 'switch';
+            } else if (accessory.getService(this.Service.Outlet)) {
+                accessory.context.serviceType = 'outlet';
+            } else {
+                accessory.context.serviceType = this.defaultServiceType;
+            }
         }
 
         // A device forced to the legacy protocol in config must be commanded with it even if
@@ -544,9 +570,12 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         const accessory = new this.api.platformAccessory(device.name || device.id, uuid);
 
         // record chosen serviceType so we can resolve it later
-        const svcType: 'outlet' | 'switch' = (device as any).serviceType === 'switch'
-            ? 'switch'
-            : this.defaultServiceType;
+        // (an explicit per-device type wins over the default; an unsupported value means outlet,
+        // which is how the service itself is resolved in getAccessoryService)
+        const requested = (device as any).serviceType as string | undefined;
+        const svcType: 'outlet' | 'switch' = requested === 'switch' ? 'switch'
+            : requested ? 'outlet'
+                : this.defaultServiceType;
 
         accessory.context = {
             id:            device.id,

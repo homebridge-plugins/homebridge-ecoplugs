@@ -35,6 +35,10 @@ export const KAB_COMMAND_PORT_C     = 80;
  * accidentally default to a KAB-specific constant. */
 export const LEGACY_DEFAULT_PORT    = 80;
 
+/** HomeKit service for newly added devices when `defaultServiceType` is not set
+ * (matches the default shown in the Homebridge config UI). */
+export const DEFAULT_SERVICE_TYPE: 'outlet' | 'switch' = 'switch';
+
 export const DEFAULT_LOCAL_ONLY    = true;
 export const DEFAULT_ENABLED       = true;
 /** Default KAB command timeout (ms) used when not overridden in config/device */

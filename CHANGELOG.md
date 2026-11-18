@@ -18,6 +18,7 @@ All notable changes to `@homebridge-plugins/homebridge-ecoplugs` will be documen
 - the KAB beacon listener now warns when it cannot bind port 10228 (e.g. another instance is using it) and keeps retrying, instead of stopping silently with only a debug message
 - one unreachable KAB plug no longer permanently switches the shared command socket (used by every plug and by beacon ACKs) to an ephemeral source port; the configured port is restored when the fallback does not help
 - changing the KAB socket's port or address no longer leaves requests waiting on the old socket until they time out, and a bind already in progress picks up the new settings
+- newly added devices now default to a Switch when `defaultServiceType` is not set, matching the default the config UI has always shown (it previously fell back to Outlet). Devices already in HomeKit keep their current type, and a per-device `serviceType: "outlet"` is honoured. Unsupported values (e.g. `Lightbulb`) are reported in the log and treated as outlet, as before
 - remove the KAB "priming" broadcast, which could never be sent (the socket does not enable broadcast)
 - docs and config UI: the per-device `commandPort` is the device's port (default 1022 for KAB, not 9090); removed the README's per-device `kabBindPort`, which does not exist; the service type list only offers the supported `outlet` and `switch`; a blank `bindAddress` is accepted by the config form
 - add tests for command ports, protocol switching, the KAB socket and beacon listener, and `bindAddress`
