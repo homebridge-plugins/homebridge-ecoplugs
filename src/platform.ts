@@ -129,6 +129,8 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         const bindPort = cfg.kabBindPort ?? KAB_COMMAND_PORT;
         kabSocket.setBindPort(bindPort);
         this.log.info(`KAB source bind port set to ${bindPort}`);
+        // surface socket bind failures at warn level (the regular KAB socket log is debug-only)
+        kabSocket.setErrorLogger((msg) => this.log.warn(msg));
 
         // optional bind address for all outgoing/listening sockets. On
         // multi-homed hosts (e.g. a Mac with both Ethernet and Wi-Fi live on

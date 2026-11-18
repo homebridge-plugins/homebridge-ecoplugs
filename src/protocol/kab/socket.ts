@@ -79,13 +79,25 @@ class KabSocketManager {
     private pendingQueue  = new Map<string, string[]>(); // host -> [groupKey,...]
 
     private logFn?: (msg: string) => void;
+    private errorFn?: (msg: string) => void;
 
     public setLogger(log: (msg: string) => void) {
         this.logFn = log;
     }
 
+    /** Logger for problems the user needs to see (e.g. the socket cannot bind).
+     * Falls back to the regular (debug) logger when not set. */
+    public setErrorLogger(log: (msg: string) => void) {
+        this.errorFn = log;
+    }
+
     private log(msg: string) {
         if (this.logFn) this.logFn(msg);
+    }
+
+    private logError(msg: string) {
+        if (this.errorFn) this.errorFn(msg);
+        else this.log(msg);
     }
 
     private async getSocket(): Promise<dgram.Socket> {
@@ -93,19 +105,65 @@ class KabSocketManager {
             return this.socket;
         }
 
-        if (this.bindingData) {
-            await this.bindingData;
-            return this.socket!;
+        if (!this.bindingData) {
+            this.bindingData = this.bindSocket().catch((err: Error) => {
+                this.currentError = err;
+                this.logError(`KAB socket could not bind to ${this.bindAddress ?? '0.0.0.0'}:${this.bindPort}: ${err.message}`);
+                throw err;
+            });
         }
 
-        this.bindingData = new Promise((resolve) => {
+        const binding = this.bindingData;
+        try {
+            await binding;
+        } catch (err) {
+            // forget the failed attempt so the next call tries to bind again
+            if (this.bindingData === binding) this.bindingData = null;
+            throw err;
+        }
+        return this.socket!;
+    }
+
+    /** Bind the shared socket, retrying without SO_REUSEPORT if the platform lacks it. */
+    private async bindSocket(): Promise<void> {
+        let sock: dgram.Socket;
+        try {
             // use SO_REUSEADDR and SO_REUSEPORT so multiple processes (e.g. diag,
             // another instance) can listen on the same port simultaneously.  On
             // Linux SO_REUSEPORT gives each socket its own queue but both will
             // receive copies of incoming datagrams.
-            const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true, reusePort: true });
+            sock = await this.openSocket(true);
+        } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== 'ENOTSUP') {
+                throw err;
+            }
+            // macOS (and any other platform where libuv has no SO_REUSEPORT support)
+            // raises ENOTSUP when the option is requested; retry with SO_REUSEADDR only.
+            this.log('SO_REUSEPORT is not supported on this platform; binding without it');
+            sock = await this.openSocket(false);
+        }
+        this.socket = sock;
+        this.socket.unref(); // don't block node from exiting
+        this.currentError = null;
+        const addr = this.socket.address();
+        this.log(`KAB global socket bound to ${addr.address}:${addr.port}`);
+    }
+
+    /** Create a UDP socket and bind it; rejects if the bind itself fails. */
+    private openSocket(reusePort: boolean): Promise<dgram.Socket> {
+        return new Promise((resolve, reject) => {
+            const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true, reusePort });
+            let bound = false;
 
             sock.on('error', (err) => {
+                if (!bound) {
+                    // bind-time failure: report it to the caller instead of leaving it waiting forever
+                    try { sock.close(); } catch {
+                        // ignore errors when closing a socket that never bound
+                    }
+                    reject(err);
+                    return;
+                }
                 this.log(`KAB global socket error: ${err.message}`);
                 this.currentError = err;
                 this.socket = null;
@@ -161,12 +219,8 @@ class KabSocketManager {
             });
 
             const onBound = () => {
-                this.socket = sock;
-                this.socket.unref(); // don't block node from exiting
-                this.currentError = null;
-                const addr = this.socket.address();
-                this.log(`KAB global socket bound to ${addr.address}:${addr.port}`);
-                resolve();
+                bound = true;
+                resolve(sock);
             };
 
             if (this.bindAddress) {
@@ -175,9 +229,6 @@ class KabSocketManager {
                 sock.bind(this.bindPort, onBound);
             }
         });
-
-        await this.bindingData;
-        return this.socket!;
     }
 
     public async sendAndReceive(
