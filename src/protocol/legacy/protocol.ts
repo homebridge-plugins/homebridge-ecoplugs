@@ -116,7 +116,7 @@ export function createLegacyManager(
             return bindingPromise;
         }
 
-        bindingPromise = new Promise((resolve, reject) => {
+        const attemptPromise = new Promise<void>((resolve, reject) => {
             const onError = (err: Error) => {
                 socket.off('listening', onListening);
                 bindingPromise = null;
@@ -134,14 +134,26 @@ export function createLegacyManager(
 
             socket.once('error', onError);
             socket.once('listening', onListening);
-            if (bindAddress) {
-                socket.bind(port, bindAddress);
-            } else {
-                socket.bind(port);
+            try {
+                if (bindAddress) {
+                    socket.bind(port, bindAddress);
+                } else {
+                    socket.bind(port);
+                }
+            } catch (err) {
+                // bind() can also throw synchronously (e.g. ERR_SOCKET_ALREADY_BOUND)
+                socket.off('error', onError);
+                socket.off('listening', onListening);
+                reject(err as Error);
             }
         });
 
-        return bindingPromise;
+        bindingPromise = attemptPromise;
+        // forget a failed attempt so the next call retries instead of reusing the rejection
+        attemptPromise.catch(() => {
+            if (bindingPromise === attemptPromise) bindingPromise = null;
+        });
+        return attemptPromise;
     }
 
     function sendToDevice(
@@ -168,7 +180,16 @@ export function createLegacyManager(
                 }
             });
         };
-        attempt(retries);
+        // Never send from an unbound socket: Node would implicitly bind it to 0.0.0.0 on a
+        // random port, which bypasses bindAddress and makes the incoming port impossible to
+        // bind afterwards (every later bind fails with "Socket is already bound").
+        ensureBound(incomingPort).then(
+            () => attempt(retries),
+            (err: Error) => {
+                log?.(`Legacy send to ${device.host}:${device.port} skipped, socket is not bound: ${err.message}`);
+                callback?.(err);
+            },
+        );
     }
 
     function sendDiscoveryProbe(

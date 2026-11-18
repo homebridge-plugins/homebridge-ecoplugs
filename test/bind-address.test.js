@@ -67,6 +67,8 @@ test('KAB socket rejects (instead of hanging) when bindAddress is not assigned t
     warnings.some((m) => m.includes('could not bind') && m.includes(UNASSIGNED)),
     `expected a warn-level bind failure message, got: ${JSON.stringify(warnings)}`,
   );
+  // the same failure repeating (every command / beacon ACK) is reported once, not every time
+  assert.equal(warnings.length, 1, `expected one warning for repeated identical failures, got: ${JSON.stringify(warnings)}`);
 
   // the failure is not sticky: once the address is valid the socket binds and works
   const echoPort = await startEchoServer(t);

@@ -50,7 +50,7 @@ test('static legacy device keeps port 80 when legacy discovery later reports it'
   assert.equal(context().port, 80);
 });
 
-test('legacy SET and GET packets for a static device are sent to port 80', (t) => {
+test('legacy SET and GET packets for a static device are sent to port 80', async (t) => {
   const sent = [];
   const realSend = dgram.Socket.prototype.send;
   dgram.Socket.prototype.send = function (buf, offset, length, port, host, callback) {
@@ -59,10 +59,13 @@ test('legacy SET and GET packets for a static device are sent to port 80', (t) =
   };
   t.after(() => { dgram.Socket.prototype.send = realSend; });
 
-  const { platform, context } = setup(t, staticDevice({ protocol: 'legacy' }));
+  // port 0: the legacy socket binds before sending, so use an ephemeral incoming port, not 9000
+  const { platform, context } = setup(t, { port: 0, ...staticDevice({ protocol: 'legacy' }) });
   platform.seedStaticDevices();
   platform.legacyManager.setPower(context(), true);
   platform.legacyManager.getStatus(context());
+  const deadline = Date.now() + 3000;
+  while (sent.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(sent, [`${HOST}:80`, `${HOST}:80`]);
 });
 

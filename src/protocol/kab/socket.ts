@@ -1,6 +1,9 @@
 import * as dgram from 'dgram';
 import { KAB_COMMAND_PORT } from '../../settings.js';
 
+/** Repeat an identical bind-failure warning at most this often. */
+const BIND_FAILURE_REPEAT_MS = 5 * 60 * 1000;
+
 interface PendingRequest {
     resolve: (data: Buffer) => void;
     reject: (err: Error) => void;
@@ -100,6 +103,21 @@ class KabSocketManager {
         else this.log(msg);
     }
 
+    /** Last bind failure reported at warn level, used to avoid repeating it on every
+     * command/beacon ACK while the problem persists. */
+    private lastBindFailure: { msg: string; at: number } | null = null;
+
+    private reportBindFailure(msg: string) {
+        const now = Date.now();
+        const last = this.lastBindFailure;
+        if (!last || last.msg !== msg || now - last.at > BIND_FAILURE_REPEAT_MS) {
+            this.logError(msg);
+            this.lastBindFailure = { msg, at: now };
+        } else {
+            this.log(msg); // repeated: debug only
+        }
+    }
+
     private async getSocket(): Promise<dgram.Socket> {
         if (this.socket) { // check if already bound
             return this.socket;
@@ -108,7 +126,7 @@ class KabSocketManager {
         if (!this.bindingData) {
             this.bindingData = this.bindSocket().catch((err: Error) => {
                 this.currentError = err;
-                this.logError(`KAB socket could not bind to ${this.bindAddress ?? '0.0.0.0'}:${this.bindPort}: ${err.message}`);
+                this.reportBindFailure(`KAB socket could not bind to ${this.bindAddress ?? '0.0.0.0'}:${this.bindPort}: ${err.message}`);
                 throw err;
             });
         }
@@ -145,6 +163,7 @@ class KabSocketManager {
         this.socket = sock;
         this.socket.unref(); // don't block node from exiting
         this.currentError = null;
+        this.lastBindFailure = null; // a later failure should be reported again
         const addr = this.socket.address();
         this.log(`KAB global socket bound to ${addr.address}:${addr.port}`);
     }
