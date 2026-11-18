@@ -222,20 +222,29 @@ async function sendWithRetry(
         if (currentBind !== 0) {
             log?.('KAB command timed out on configured bind port, retrying with ephemeral port');
             kabSocket.setBindPort(0);
-            return sendWithRetry(buf, device, retries, log, false);
+            const result = await sendWithRetry(buf, device, retries, log, false);
+            if (result.ok) {
+                log?.('KAB device answered from an ephemeral source port; keeping it');
+            } else {
+                // No answer from an ephemeral port either (most likely the device is offline).
+                // The socket is shared by every device and by the beacon ACKs, so restore the
+                // configured source port instead of leaving one unreachable plug to change it
+                // for everything else.
+                log?.(`KAB ephemeral source port did not help; restoring source port ${currentBind}`);
+                kabSocket.setBindPort(currentBind);
+            }
+            return result;
         }
     }
 
     // priming step: certain devices stop listening after a few packets.  we'll
-    // send a couple of extra discovery packets (broadcast + ephemeral source)
-    // once per device lifetime, then retry the entire sequence.
+    // send an extra packet from an ephemeral source port once per device
+    // lifetime, then retry the entire sequence.  (An earlier broadcast step was
+    // removed: the shared socket never enables SO_BROADCAST, so it always failed.)
     if (!device.kabPrimed) {
         device.kabPrimed = true;
-        log?.('KAB priming device with broadcast/ephemeral discovery');
+        log?.('KAB priming device from an ephemeral source port');
         try {
-            // broadcast
-            await kabSocket.sendAndReceive(buf, '255.255.255.255', port, timeoutMs).catch(() => {});
-            // ephemeral source port
             const origBind = kabSocket.getBindPort();
             kabSocket.setBindPort(0);
             await kabSocket.sendAndReceive(buf, host, port, timeoutMs).catch(() => {});

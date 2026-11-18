@@ -13,7 +13,14 @@ All notable changes to `@homebridge-plugins/homebridge-ecoplugs` will be documen
 - report KAB socket bind failures at warn level instead of leaving commands hanging
 - log failed legacy sends and discovery probes (visible with debug logging) instead of dropping them silently
 - fix the legacy socket never recovering (and ignoring `bindAddress`) if a status poll ran while its port could not be bound
-- add tests for command ports, KAB socket binding and `bindAddress`
+- fix `protocol: "legacy"` never taking effect for a device already cached as KAB
+- a device forced to `protocol: "legacy"` that also sends KAB beacons keeps the legacy command port instead of taking the beacon's KAB port
+- the KAB beacon listener now warns when it cannot bind port 10228 (e.g. another instance is using it) and keeps retrying, instead of stopping silently with only a debug message
+- one unreachable KAB plug no longer permanently switches the shared command socket (used by every plug and by beacon ACKs) to an ephemeral source port; the configured port is restored when the fallback does not help
+- changing the KAB socket's port or address no longer leaves requests waiting on the old socket until they time out, and a bind already in progress picks up the new settings
+- remove the KAB "priming" broadcast, which could never be sent (the socket does not enable broadcast)
+- docs and config UI: the per-device `commandPort` is the device's port (default 1022 for KAB, not 9090); removed the README's per-device `kabBindPort`, which does not exist; the service type list only offers the supported `outlet` and `switch`; a blank `bindAddress` is accepted by the config form
+- add tests for command ports, protocol switching, the KAB socket and beacon listener, and `bindAddress`
 
 ## v1.0.3 (2026-11-18)
 

@@ -164,21 +164,90 @@ export interface BeaconListenerOptions {
      * inverted here.
      */
     ack?: boolean;
+    /** Logger for problems the user needs to see (e.g. the port is in use). Defaults to `log`. */
+    warn?: (msg: string) => void;
+    /** Logger for the listener recovering after a reported problem. Defaults to `log`. */
+    info?: (msg: string) => void;
+    /** UDP port to listen on (default 10228; tests use another port). */
+    port?: number;
+    /** Delay before retrying after the socket failed (default 60s). */
+    retryMs?: number;
 }
+
+/** Handle for a running beacon listener. */
+export interface KabBeaconListener {
+    /** Stop listening and cancel any pending retry. */
+    close(): void;
+}
+
+const BEACON_RETRY_MS = 60_000;
 
 export function startKabBeaconListener(
     onBeacon: BeaconCallback,
     log?: (msg: string) => void,
     opts: BeaconListenerOptions = {},
-): dgram.Socket {
-    const sock = dgram.createSocket('udp4');
+): KabBeaconListener {
+    const port    = opts.port ?? KAB_BEACON_PORT;
+    const retryMs = opts.retryMs ?? BEACON_RETRY_MS;
+    const warn    = opts.warn ?? log;
+    const info    = opts.info ?? log;
 
-    sock.on('error', (err) => {
-        log?.(`KAB beacon socket error: ${err.message}`);
-        sock.close();
-    });
+    let sock: dgram.Socket | null = null;
+    let retryTimer: NodeJS.Timeout | null = null;
+    let closed = false;
+    /** last problem reported at warn level; repeats of it go to the debug log */
+    let reported: string | null = null;
 
-    sock.on('message', (raw: Buffer, remote: dgram.RemoteInfo) => {
+    const scheduleRetry = () => {
+        if (closed || retryTimer) return;
+        retryTimer = setTimeout(() => {
+            retryTimer = null;
+            open();
+        }, retryMs);
+        retryTimer.unref();
+    };
+
+    const open = () => {
+        if (closed) return;
+        const s = dgram.createSocket('udp4');
+        sock = s;
+        let bound = false;
+
+        s.on('error', (err) => {
+            try { s.close(); } catch {
+                // already closed
+            }
+            if (sock === s) sock = null;
+            const problem = bound
+                ? `KAB beacon listener on UDP port ${port} stopped: ${err.message}`
+                : `KAB beacon listener could not bind to UDP port ${port}: ${err.message} ` +
+                  '(is another Homebridge instance or plugin using this port?)';
+            const msg = `${problem}. KAB plugs will not be discovered or updated until it recovers; ` +
+                        `retrying every ${Math.round(retryMs / 1000)}s`;
+            if (problem !== reported) {
+                warn?.(msg);
+                reported = problem;
+            } else {
+                log?.(msg);
+            }
+            scheduleRetry();
+        });
+
+        s.on('message', (raw: Buffer, remote: dgram.RemoteInfo) => handleBeacon(raw, remote));
+
+        s.bind(port, () => {
+            bound = true;
+            s.setBroadcast(true);
+            if (reported) {
+                info?.(`KAB beacon listener recovered and is listening on port ${port}`);
+                reported = null;
+            } else {
+                log?.(`KAB beacon listener bound to port ${port}`);
+            }
+        });
+    };
+
+    const handleBeacon = (raw: Buffer, remote: dgram.RemoteInfo) => {
         if (raw.length < BEACON_MIN_SIZE) return;
 
         const decrypted = Buffer.alloc(raw.length, 0);
@@ -222,12 +291,23 @@ export function startKabBeaconListener(
         }
 
         onBeacon(device);
-    });
+    };
 
-    sock.bind(KAB_BEACON_PORT, () => {
-        sock.setBroadcast(true);
-        log?.(`KAB beacon listener bound to port ${KAB_BEACON_PORT}`);
-    });
+    open();
 
-    return sock;
+    return {
+        close() {
+            closed = true;
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+                retryTimer = null;
+            }
+            if (sock) {
+                try { sock.close(); } catch {
+                    // already closed
+                }
+                sock = null;
+            }
+        },
+    };
 }

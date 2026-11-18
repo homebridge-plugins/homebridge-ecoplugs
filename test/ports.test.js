@@ -93,6 +93,55 @@ test('an explicit legacy commandPort is not overwritten by discovery', (t) => {
   assert.equal(portUpdateLogs(logs).length, 0);
 });
 
+test('a cached KAB accessory is switched to legacy when the config forces protocol "legacy"', (t) => {
+  const cachedKab = { id: ID, name: 'Plug', host: HOST, port: 1022, protocol: 'kab', kabLanIp: HOST, kabLanPort: 1022 };
+  const { context, logs } = setup(t, { devices: [{ id: ID, protocol: 'legacy' }] }, [cachedKab]);
+  assert.equal(context().protocol, 'legacy');
+  assert.equal(context().port, 80);
+  assert.ok(logs.some((l) => l.startsWith('info:') && l.includes('to the legacy protocol')), JSON.stringify(logs));
+});
+
+test('a forced-legacy switch of a cached accessory honours an explicit commandPort', (t) => {
+  const cachedKab = { id: ID, name: 'Plug', host: HOST, port: 1022, protocol: 'kab' };
+  const { context } = setup(t, { devices: [{ id: ID, protocol: 'legacy', commandPort: 1234 }] }, [cachedKab]);
+  assert.equal(context().protocol, 'legacy');
+  assert.equal(context().port, 1234);
+});
+
+test('a switched device is then commanded with the legacy protocol on port 80', async (t) => {
+  const sent = [];
+  const realSend = dgram.Socket.prototype.send;
+  dgram.Socket.prototype.send = function (buf, offset, length, port, host, callback) {
+    sent.push(`${host}:${port}`);
+    if (typeof callback === 'function') callback(null);
+  };
+  t.after(() => { dgram.Socket.prototype.send = realSend; });
+
+  const cachedKab = { id: ID, name: 'Plug', host: HOST, port: 1022, protocol: 'kab', kabKey: 'key' };
+  const { platform, context } = setup(t, { port: 0, devices: [{ id: ID, protocol: 'legacy' }] }, [cachedKab]);
+  await platform.setPowerState(context(), true);
+  const deadline = Date.now() + 3000;
+  while (sent.length < 1 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(sent, [`${HOST}:80`]);
+});
+
+test('without a protocol setting, legacy discovery does not switch a cached KAB accessory', (t) => {
+  const cachedKab = { id: ID, name: 'Plug', host: HOST, port: 1022, protocol: 'kab' };
+  const { platform, context } = setup(t, {}, [cachedKab]);
+  platform.handleDiscoveredDevice(legacyDiscovery(), 'legacy-discovery');
+  assert.equal(context().protocol, 'kab');
+});
+
+test('a device forced to legacy keeps port 80 and gets no KAB address when it also sends KAB beacons', (t) => {
+  const { platform, context, logs } = setup(t, staticDevice({ protocol: 'legacy' }));
+  platform.seedStaticDevices();
+  platform.handleDiscoveredDevice(kabBeacon(1022), 'kab-beacon');
+  assert.equal(context().protocol, 'legacy');
+  assert.equal(context().port, 80);
+  assert.equal(context().kabLanPort, undefined);
+  assert.equal(portUpdateLogs(logs).length, 0);
+});
+
 test('KAB devices: a configured commandPort differing from the beacon port causes no port churn or log noise', (t) => {
   const { platform, context, logs } = setup(t, staticDevice({ protocol: 'kab', commandPort: 9090 }));
   platform.seedStaticDevices();

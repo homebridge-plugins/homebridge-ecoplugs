@@ -225,6 +225,16 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             accessory.context.serviceType = this.defaultServiceType;
         }
 
+        // A device forced to the legacy protocol in config must be commanded with it even if
+        // it was cached as KAB (e.g. first seen via a beacon, or before the setting was added).
+        // Nothing else switches a cached accessory to legacy: the KAB path only ever sets 'kab'.
+        if (override?.protocol === 'legacy' && accessory.context.protocol !== 'legacy') {
+            const from = accessory.context.protocol ?? 'unknown';
+            this.log.info(`Switching ${accessory.context.id} from ${from} to the legacy protocol (configured)`);
+            accessory.context.protocol = 'legacy';
+            accessory.context.port = override.commandPort ?? LEGACY_DEFAULT_PORT;
+        }
+
         this.cachedAccessories.set(accessory.context.id, accessory);
         this.configureServices(accessory);
     }
@@ -261,7 +271,11 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         startKabBeaconListener(
             (device) => this.handleDiscoveredDevice(device, 'kab-beacon'),
             (msg)    => this.log.debug(msg),
-            { ack: !this.skipBeaconAckGlobally },
+            {
+                ack:  !this.skipBeaconAckGlobally,
+                warn: (msg) => this.log.warn(msg),
+                info: (msg) => this.log.info(msg),
+            },
         );
 
         // Seed any statically-configured IP devices immediately
@@ -372,15 +386,6 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         }
         device.id = deviceId;
 
-        // if we learned the IP/port via a beacon, treat it as a known LAN
-        // address so the command layer will skip the discovery handshake.
-        if (device.protocol === 'kab' && source === 'kab-beacon') {
-            // beacon gives us the current LAN address; store it so that
-            // sendWithRetry() can skip the expensive/fussy discovery handshake.
-            device.kabLanIp = device.host;
-            device.kabLanPort = device.port;
-        }
-
         if (this.localOnly && !isPrivateAddress(device.host)) {
             this.log.info(`Skipping non-local device ${device.id} @ ${device.host} (${source})`);
             return;
@@ -416,9 +421,23 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             // otherwise every discovery cycle would silently undo the override.
             if (override.commandPort && device.protocol === 'legacy') {
                 device.port = override.commandPort;
+            } else if (device.protocol === 'legacy' && source === 'kab-beacon') {
+                // a device forced to legacy that also sends KAB beacons: the beacon's port is
+                // the KAB command port, not where legacy commands go
+                device.port = LEGACY_DEFAULT_PORT;
             }
             // any per-device skipDiscovery/useBeacon flags are ignored; plugin
             // behaviour is fixed.
+        }
+
+        // if we learned the IP/port via a beacon, treat it as a known LAN
+        // address so the command layer will skip the discovery handshake.
+        // (Checked after the overrides so a device forced to legacy is left alone.)
+        if (device.protocol === 'kab' && source === 'kab-beacon') {
+            // beacon gives us the current LAN address; store it so that
+            // sendWithRetry() can skip the expensive/fussy discovery handshake.
+            device.kabLanIp = device.host;
+            device.kabLanPort = device.port;
         }
 
         const existing = this.cachedAccessories.get(device.id);
@@ -426,6 +445,11 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
 
         if (existing) {
             acc = existing;
+            // see configureAccessory: only an explicit config setting switches a cached device to legacy
+            if (device.protocol === 'legacy' && override?.protocol === 'legacy' && existing.context.protocol !== 'legacy') {
+                this.log.info(`Switching ${device.id} from ${existing.context.protocol ?? 'unknown'} to the legacy protocol (configured)`);
+                existing.context.protocol = 'legacy';
+            }
             // update name from beacon if it changed
             if (device.name && device.name !== existing.context.name) {
                 this.log.info(`Renaming accessory ${device.id} "${existing.context.name}" → "${device.name}" from beacon`);

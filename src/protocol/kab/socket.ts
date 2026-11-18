@@ -41,14 +41,9 @@ class KabSocketManager {
      * already bound we tear it down so the next call to getSocket() will bind
      * again to the new port. */
     public setBindPort(port: number) {
+        if (port === this.bindPort) return;
         this.bindPort = port;
-        if (this.socket) {
-            try { this.socket.close(); } catch {
-                // ignore errors when closing the socket; nothing we can do here
-            }
-            this.socket = null;
-            this.bindingData = null;
-        }
+        this.resetSocket();
     }
 
     /** Override the local address used for KAB commands. Call before sending
@@ -56,7 +51,20 @@ class KabSocketManager {
      * already bound we tear it down so the next call to getSocket() will bind
      * again to the new address. */
     public setBindAddress(address: string | undefined) {
+        if (address === this.bindAddress) return;
         this.bindAddress = address;
+        this.resetSocket();
+    }
+
+    /** Incremented whenever the bind settings change, so a bind that was already in
+     * progress with the old settings is discarded instead of being used. */
+    private generation = 0;
+
+    /** Drop the current socket after a settings change; the next send binds a new one. */
+    private resetSocket() {
+        this.generation += 1;
+        // A bind still in progress is kept: it notices the new generation and binds again
+        // with the new settings, so concurrent callers never start a second bind.
         if (this.socket) {
             try { this.socket.close(); } catch {
                 // ignore errors when closing the socket; nothing we can do here
@@ -64,6 +72,15 @@ class KabSocketManager {
             this.socket = null;
             this.bindingData = null;
         }
+        // replies to requests sent from the old socket can no longer arrive; fail them now
+        // (callers retry) rather than letting each one wait for its full timeout
+        const err = new Error('KAB socket was re-bound with new settings');
+        for (const grp of this.pendingGroups.values()) {
+            clearTimeout(grp.timer);
+            for (const req of grp.reqs) req.reject(err);
+        }
+        this.pendingGroups.clear();
+        this.pendingQueue.clear();
     }
 
     /**
@@ -144,6 +161,7 @@ class KabSocketManager {
 
     /** Bind the shared socket, retrying without SO_REUSEPORT if the platform lacks it. */
     private async bindSocket(): Promise<void> {
+        const generation = this.generation;
         let sock: dgram.Socket;
         try {
             // use SO_REUSEADDR and SO_REUSEPORT so multiple processes (e.g. diag,
@@ -159,6 +177,13 @@ class KabSocketManager {
             // raises ENOTSUP when the option is requested; retry with SO_REUSEADDR only.
             this.log('SO_REUSEPORT is not supported on this platform; binding without it');
             sock = await this.openSocket(false);
+        }
+        if (generation !== this.generation) {
+            // the port/address changed while this bind was in progress: bind again with the new settings
+            try { sock.close(); } catch {
+                // ignore errors when closing the socket; nothing we can do here
+            }
+            return this.bindSocket();
         }
         this.socket = sock;
         this.socket.unref(); // don't block node from exiting

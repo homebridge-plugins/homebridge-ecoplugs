@@ -102,7 +102,6 @@ Use this when you want immediate startup registration without waiting for a beac
         "id": "ECO-78ABCDEF",
         "host": "192.168.1.50",
         "protocol": "kab",
-        "commandPort": 9090,
         "kabKey": "keenfeng",
         "kabPass": "111111"
       }
@@ -141,18 +140,17 @@ Use this when you want immediate startup registration without waiting for a beac
 | `id`          | yes      | Device ID, e.g. `ECO-78ABCDEF`                                      |
 | `host`        | no       | Static IP to seed device at startup                                 |
 | `protocol`    | no       | `auto` (default), `legacy`, or `kab`                                |
-| `commandPort` | no       | Override command port (typically `9090` KAB, `80` legacy)           |
+| `commandPort` | no       | Override the port the device listens on for commands (default `1022` KAB, `80` legacy). This is the device's port, not the local source port (`kabBindPort`); normally leave it unset |
 | `kabKey`      | no       | KAB credential key (usually auto-populated from beacon)             |
 | `kabPass`     | no       | KAB command password (default `111111`)                             |
 | `kabMaxFailures`| no     | Override global max consecutive status failures for this device     |
-| `kabBindPort` | no       | Override source bind port just for this device (0 = ephemeral)      |
 
 ## Protocol and Port Support
 
 | Protocol                 | Discovery                    | Commands | Typical devices                    |
 |--------------------------|------------------------------|----------|-------------------------------------|
 | Legacy (FtNetManager)    | UDP 25 + 5888 (broadcast)    | UDP 80   | Older CT-065W / WiOn models        |
-| KAB (KABNetManager)      | UDP 10228 (beacon)           | UDP 9090 | Newer ECO firmware                 |
+| KAB (KABNetManager)      | UDP 10228 (beacon)           | UDP 1022 (sent from local port 9090) | Newer ECO firmware |
 
 The plugin auto-selects protocol per device by discovery data. You can also force a protocol per device in config.
 
