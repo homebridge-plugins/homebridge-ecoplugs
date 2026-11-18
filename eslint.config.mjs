@@ -1,44 +1,25 @@
-import { FlatCompat } from '@eslint/eslintrc';
 import js from '@eslint/js';
-import path from 'path';
-import tsParser from '@typescript-eslint/parser';
+import { defineConfig } from 'eslint/config';
+import tseslint from 'typescript-eslint';
 
-// __dirname is available by default in CommonJS
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  resolvePluginsRelativeTo: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
+// Flat config for ESLint 10 + typescript-eslint.
+// Named .mjs because package.json is CommonJS (the compiled plugin in dist/ must stay CJS).
+export default defineConfig(
+  // ignore patterns (replaces the old .eslintignore)
+  { ignores: ['dist/**', 'node_modules/**'] },
 
-export default [
-  // ESLintRC-style extends
-  ...compat.extends('eslint:recommended', 'plugin:@typescript-eslint/recommended'),
-
-  // environments
-  ...compat.env({ node: true, jest: true }),
-
-  // plugins
-  ...compat.plugins('@typescript-eslint'),
+  js.configs.recommended,
+  tseslint.configs.recommended,
 
   // project-specific settings for TS source
   {
     files: ['src/**/*.ts'],
-    languageOptions: {
-      parser: tsParser,
-      parserOptions: {
-        project: './tsconfig.json',
-        tsconfigRootDir: __dirname,
-        sourceType: 'module',
-      },
-    },
     rules: {
       quotes: ['warn', 'single'],
       // indenting throughout the project is four spaces, so match the codebase
       // indentation is already enforced by preexisting formatting; turn
       // off to avoid minor spacing mismatches.
       indent: 'off',
-      // prefer semicolons but let ESLint handle it; the TypeScript plugin no longer ships a
-      // `semi` rule so we use the core rule directly rather than trying to override it.
       semi: ['warn'],
       'comma-dangle': ['warn', 'always-multiline'],
       'dot-notation': 'off',
@@ -50,7 +31,6 @@ export default [
       'prefer-arrow-callback': ['warn'],
       'max-len': ['warn', 140],
       'no-console': ['warn'], // use the provided Homebridge log method instead
-      'no-non-null-assertion': 'off',
       'comma-spacing': ['error'],
       // alignment in this codebase uses extra spaces for readability, so
       // the core rule generates a lot of noise.  disable it rather than
@@ -58,14 +38,14 @@ export default [
       'no-multi-spaces': 'off',
       'no-trailing-spaces': ['warn'],
       'lines-between-class-members': ['warn', 'always', { exceptAfterSingleLine: true }],
+      // Existing code uses `any` and a CommonJS require() for package.json.  These are
+      // pre-existing debt surfaced by the working lint setup, so keep them visible as
+      // warnings rather than failing CI.  TODO: type the protocol payloads and drop these.
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-require-imports': 'warn',
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
-
-  // ignore patterns (replaces the old .eslintignore)
-  {
-    ignores: ['dist/**', 'node_modules/**'],
-  },
-];
+);
