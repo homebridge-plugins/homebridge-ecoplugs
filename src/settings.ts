@@ -30,6 +30,10 @@ export const KAB_DEVICE_PORT        = 1022;
 export const KAB_COMMAND_PORT_B     = 6000;
 /** KABNetManager fallback command port B (legacy). */
 export const KAB_COMMAND_PORT_C     = 80;
+/** Legacy (FtNetManager) command/status port — same value as KAB_COMMAND_PORT_C
+ * but named for its own protocol so static-IP legacy device config doesn't
+ * accidentally default to a KAB-specific constant. */
+export const LEGACY_DEFAULT_PORT    = 80;
 
 export const DEFAULT_LOCAL_ONLY    = true;
 export const DEFAULT_ENABLED       = true;
