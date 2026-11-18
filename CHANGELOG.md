@@ -2,7 +2,7 @@
 
 All notable changes to `@homebridge-plugins/homebridge-ecoplugs` will be documented in this file.
 
-## v1.0.3 (unreleased)
+## v1.0.3 (2026-11-18)
 
 ### Changes
 
