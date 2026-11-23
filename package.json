@@ -55,8 +55,8 @@
   },
   "scripts": {
     "check": "npm install && npm outdated",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
+    "lint": "eslint src test",
+    "lint:fix": "eslint src test --fix",
     "clean": "rimraf ./dist",
     "build": "npm run clean && tsc",
     "test": "npm run build && node --test \"test/*.test.js\"",

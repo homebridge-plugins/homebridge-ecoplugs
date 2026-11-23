@@ -48,4 +48,24 @@ export default defineConfig(
       '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
+
+  // Tests run as CommonJS under Node's built-in test runner. Keep them in the
+  // lint scope, but use their actual runtime globals and module style.
+  {
+    files: ['test/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        Buffer: 'readonly',
+        __dirname: 'readonly',
+        clearInterval: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 );
