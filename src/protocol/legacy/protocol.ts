@@ -3,6 +3,7 @@
  */
 
 import * as dgram from 'dgram';
+import * as os from 'os';
 import {
     buildGetRequest,
     buildSetRequest,
@@ -19,6 +20,8 @@ import {
 } from '../../settings.js';
 import type { DeviceInfo, StatusMessage } from '../types.js';
 
+/** Limited broadcast, always probed; directed (per-subnet) broadcasts are added to it. */
+const LIMITED_BROADCAST    = '255.255.255.255';
 const DISCOVERY_TIMEOUT_MS = 1500;
 const COMMAND_TIMEOUT_MS   = 500;
 const DEFAULT_RETRIES      = 3;
@@ -30,8 +33,14 @@ export interface LegacyManager {
     setPower(device: DeviceInfo, on: boolean): void;
     /** Send a status poll request. */
     getStatus(device: DeviceInfo): void;
-    /** Trigger a discovery broadcast; resolves with found devices. */
-    discover(): Promise<DeviceInfo[]>;
+    /**
+     * Trigger a discovery broadcast; resolves with found devices.
+     *
+     * `unicastHosts` are known device addresses (static-IP devices from the
+     * config) that are probed directly as well, so they are found even when
+     * broadcasts do not reach them.
+     */
+    discover(unicastHosts?: readonly string[]): Promise<DeviceInfo[]>;
     /** Start background status listener; `callback` called on each status message. */
     startStatusListener(callback: StatusCallback): void;
     /** Shut down the socket. */
@@ -193,15 +202,16 @@ export function createLegacyManager(
     }
 
     function sendDiscoveryProbe(
+        host: string,
         port: number,
         retries: number,
         callback: (err?: Error) => void,
     ): void {
         const probe = buildDiscoveryProbe();
         const attempt = (remaining: number) => {
-            socket.send(probe, 0, 128, port, '255.255.255.255', (err) => {
+            socket.send(probe, 0, 128, port, host, (err) => {
                 if (err) {
-                    log?.(`Legacy discovery probe to 255.255.255.255:${port} failed: ${err.message}`);
+                    log?.(`Legacy discovery probe to ${host}:${port} failed: ${err.message}`);
                     callback(err);
                 } else if (remaining > 1) {
                     setTimeout(() => attempt(remaining - 1), DISCOVERY_TIMEOUT_MS);
@@ -221,20 +231,42 @@ export function createLegacyManager(
             );
         },
 
-        discover(): Promise<DeviceInfo[]> {
+        discover(unicastHosts: readonly string[] = []): Promise<DeviceInfo[]> {
             discoveredMap.clear();
             return ensureBound(incomingPort).then(
                 () =>
                     new Promise((resolve) => {
-                        let remaining = 2; // probe port 25 + port 5888
+                        // Listing interfaces can throw on restricted systems. The extra broadcasts
+                        // are an addition, so never let that stop the plain broadcast from working.
+                        let interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = {};
+                        try {
+                            interfaces = os.networkInterfaces();
+                        } catch (err) {
+                            log?.(
+                                'Legacy discovery: cannot list network interfaces, ' +
+                                `probing ${LIMITED_BROADCAST} only: ${(err as Error).message}`,
+                            );
+                        }
+                        const hosts = [
+                            ...discoveryBroadcastTargets(interfaces, { bindAddress, localOnly }),
+                            ...unicastProbeHosts(unicastHosts, localOnly, log),
+                        ];
+                        const probes: Array<{ host: string; port: number }> = [];
+                        for (const host of new Set(hosts)) {
+                            probes.push({ host, port: LEGACY_DISCOVERY_PORT });
+                            probes.push({ host, port: LEGACY_DISCOVERY_PORT2 });
+                        }
+
+                        let remaining = probes.length;
                         const done = () => {
                             remaining--;
                             if (remaining === 0) {
                                 resolve([...discoveredMap.values()]);
                             }
                         };
-                        sendDiscoveryProbe(LEGACY_DISCOVERY_PORT,  3, done);
-                        sendDiscoveryProbe(LEGACY_DISCOVERY_PORT2, 3, done);
+                        for (const probe of probes) {
+                            sendDiscoveryProbe(probe.host, probe.port, 3, done);
+                        }
                     }),
             );
         },
@@ -251,6 +283,92 @@ export function createLegacyManager(
             try { socket.close(); } catch { /* ignore */ }
         },
     };
+}
+
+// ── Discovery targets ─────────────────────────────────────────────────────────
+
+function ipv4ToInt(address: string): number | null {
+    const parts = address.split('.');
+    if (parts.length !== 4) return null;
+    let value = 0;
+    for (const part of parts) {
+        if (!/^\d{1,3}$/.test(part) || Number(part) > 255) return null;
+        value = value * 256 + Number(part);
+    }
+    return value;
+}
+
+function intToIpv4(value: number): string {
+    return [value >>> 24, (value >>> 16) & 255, (value >>> 8) & 255, value & 255].join('.');
+}
+
+/**
+ * The directed broadcast address of an IPv4 interface (e.g. 192.168.1.255 for
+ * 192.168.1.20/24), or null when the interface has none: a /31 or /32, or an
+ * address or netmask that is not valid.
+ */
+export function directedBroadcastAddress(address: string, netmask: string): string | null {
+    const addr = ipv4ToInt(address);
+    const mask = ipv4ToInt(netmask);
+    if (addr === null || mask === null || mask === 0) return null;
+    const hostBits = (~mask) >>> 0;
+    // the mask must be contiguous ones followed by zeros, with at least 2 host bits
+    if ((hostBits & (hostBits + 1)) !== 0 || hostBits < 3) return null;
+    return intToIpv4((addr | hostBits) >>> 0);
+}
+
+/**
+ * The broadcast addresses to send discovery probes to.
+ *
+ * The limited broadcast (255.255.255.255) is always included, as before. Each
+ * usable IPv4 interface also contributes its own subnet's directed broadcast,
+ * which the OS reliably sends out of that interface. This is what the official
+ * ECO Plugs setup tools do, and it finds devices when the limited broadcast
+ * leaves through a different interface.
+ *
+ * With `bindAddress` set, only that interface's broadcast is added: a socket
+ * pinned to one address must not probe other subnets. With `localOnly`, only
+ * private subnets are probed.
+ */
+export function discoveryBroadcastTargets(
+    interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>,
+    options: { bindAddress?: string; localOnly: boolean },
+): string[] {
+    const targets: string[] = [LIMITED_BROADCAST];
+    const pinned = options.bindAddress && options.bindAddress !== '0.0.0.0'
+        ? options.bindAddress
+        : undefined;
+
+    for (const addresses of Object.values(interfaces)) {
+        for (const info of addresses ?? []) {
+            if (info.family !== 'IPv4' || info.internal) continue;
+            if (pinned && info.address !== pinned) continue;
+            const broadcast = directedBroadcastAddress(info.address, info.netmask);
+            if (!broadcast || targets.includes(broadcast)) continue;
+            if (options.localOnly && !isPrivateAddress(broadcast)) continue;
+            targets.push(broadcast);
+        }
+    }
+    return targets;
+}
+
+/** Known device addresses that may be probed directly (IPv4 literals, and only local ones with `localOnly`). */
+function unicastProbeHosts(
+    hosts: readonly string[],
+    localOnly: boolean,
+    log?: (msg: string) => void,
+): string[] {
+    const usable: string[] = [];
+    for (const host of hosts) {
+        if (ipv4ToInt(host) === null) {
+            log?.(`Legacy discovery: not probing "${host}" directly, it is not an IPv4 address`);
+        } else if (localOnly && !isPrivateAddress(host)) {
+            log?.(`Legacy discovery: not probing non-local host ${host}`);
+        } else if (!usable.includes(host)) {
+            usable.push(host);
+        }
+    }
+    return usable;
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

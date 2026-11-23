@@ -6,9 +6,8 @@
  *   130 bytes – setPower request / status response
  *   408 bytes – discovery response
  *
- * Discovery is triggered by sending a 128-byte all-zeros probe (with two
- * 32-bit fields set at offsets 23 and 27) to 255.255.255.255:25 (and
- * optionally :5888).
+ * Discovery is triggered by sending a 128-byte probe (all zeros except the
+ * local date and time at offsets 24-31) to 255.255.255.255:25 (and :5888).
  */
 
 import { LEGACY_DEFAULT_PORT } from '../../settings.js';
@@ -62,12 +61,26 @@ export function buildSetRequest(deviceId: string, on: boolean): Buffer {
 }
 
 /**
- * Build a 128-byte discovery probe (all zeros except two magic fields).
+ * Build a 128-byte discovery probe: all zeros except the sender's local date
+ * and time, as the original ECO Plugs app sends it.
+ *
+ *   offset 24  uint16 LE  year
+ *   offset 26  uint8      month (1-12)
+ *   offset 27  uint8      day of month
+ *   offset 28  uint32 LE  seconds since local midnight
+ *
+ * This probe used to be a fixed buffer that always carried 2016-11-17
+ * 11:13:59; those bytes decode to exactly this layout.
  */
-export function buildDiscoveryProbe(): Buffer {
+export function buildDiscoveryProbe(now: Date = new Date()): Buffer {
     const buf = Buffer.alloc(128, 0);
-    buf.writeUInt32BE(0x00e0070b, 23);
-    buf.writeUInt32BE(0x11f79d00, 27);
+    buf.writeUInt16LE(now.getFullYear(), 24);
+    buf.writeUInt8(now.getMonth() + 1, 26);
+    buf.writeUInt8(now.getDate(), 27);
+    buf.writeUInt32LE(
+        now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
+        28,
+    );
     return buf;
 }
 
@@ -122,11 +135,18 @@ export function parseDiscoveryResponse(msg: Buffer, remoteHost: string): DeviceI
 
         void shortid; void SSID; void mac;
 
+        // The discovery reply advertises the UDP command port at byte 404.
+        // Most legacy devices use 80, but using the advertised value lets us
+        // control firmware variants that chose a different port.
+        const advertisedPort = msg.readUInt32LE(404);
+
         return {
             id:       id   || `LEGACY-${remoteHost}`,
             name,
             host,
-            port:     LEGACY_DEFAULT_PORT,
+            port:     advertisedPort >= 1 && advertisedPort <= 65535
+                ? advertisedPort
+                : LEGACY_DEFAULT_PORT,
             protocol: 'legacy',
             version,
         };

@@ -364,9 +364,17 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
 
     private async runDiscovery(): Promise<void> {
         this.log.debug('Running legacy device discovery…');
+        // Static devices that are known to be legacy are also probed directly, so they are
+        // found (and learn their advertised command port, name and firmware) even when
+        // broadcasts never reach them, e.g. Homebridge in a container or on another VLAN.
+        // Devices left on `auto` are not probed: their protocol is not known to be legacy.
+        const legacyHosts = this.staticDevices
+            .filter(d => d.protocol === 'legacy' && d.host)
+            .map(d => d.host as string);
+
         let devices: DeviceInfo[];
         try {
-            devices = await this.legacyManager.discover();
+            devices = await this.legacyManager.discover(legacyHosts);
         } catch (e) {
             this.log.error('Discovery error:', (e as Error).message);
             return;
@@ -442,9 +450,9 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             if (override.serviceType) {
                 (device as any).serviceType = override.serviceType;
             }
-            // Legacy devices are commanded at `device.port`, and discovery always
-            // reports the default (80).  An explicit commandPort must win over that,
-            // otherwise every discovery cycle would silently undo the override.
+            // Legacy devices are commanded at `device.port`, which discovery obtains
+            // from the device's advertised command port. An explicit commandPort must
+            // win, otherwise every discovery cycle would silently undo the override.
             if (override.commandPort && device.protocol === 'legacy') {
                 device.port = override.commandPort;
             } else if (device.protocol === 'legacy' && source === 'kab-beacon') {

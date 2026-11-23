@@ -182,7 +182,7 @@
             "host": {
               "title": "IP Address",
               "type": "string",
-              "description": "Static IP address of the device. Set this to connect immediately without waiting for a device beacon on port 10228."
+              "description": "Static IP address of the device. Set this to connect immediately without waiting for a device beacon on port 10228. For a legacy device (Protocol set to Legacy) it is also probed directly, so it is found even where broadcasts do not reach Homebridge."
             },
             "commandPort": {
               "title": "Command Port",
