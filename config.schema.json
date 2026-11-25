@@ -164,9 +164,13 @@
         },
         "items": {
           "type": "object",
-          "required": [
-            "id"
-          ],
+          "dependencies": {
+            "serviceType": ["id"],
+            "host": ["id"],
+            "commandPort": ["id"],
+            "kabKey": ["id"],
+            "kabPass": ["id"]
+          },
           "properties": {
             "id": {
               "title": "Device ID",
@@ -209,8 +213,7 @@
                 "auto",
                 "legacy",
                 "kab"
-              ],
-              "default": "auto"
+              ]
             }
           }
         }

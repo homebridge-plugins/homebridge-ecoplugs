@@ -26,6 +26,7 @@ All notable changes to `@homebridge-plugins/homebridge-ecoplugs` will be documen
 - remove the KAB "priming" broadcast, which could never be sent (the socket does not enable broadcast)
 - docs and config UI: the per-device `commandPort` is the device's port (default 1022 for KAB, not 9090); removed the README's per-device `kabBindPort`, which does not exist; the service type list only offers the supported `outlet` and `switch`; a blank `bindAddress` is accepted by the config form
 - docs: add an "Initial Wi-Fi setup" section, with a callout at the top of the README and a troubleshooting pointer, for the independent ecoplugs-wion-initial-setup tool for onboarding legacy devices after a factory reset, and note the other brand names (Woods WiOn, WorkChoice, DEWENWILS) the ECO Plugs family was sold under
+- config UI: fix the "Config validation failed" warning caused by the blank per-device entry the form adds on its own, even with Advanced Options hidden. A device ID is still required once any other device setting (other than Protocol) is filled in
 - add tests for command ports, protocol switching, the KAB socket and beacon listener, `bindAddress`, the legacy discovery probe and request packet layout, and legacy discovery targets (per-interface broadcasts and direct probes)
 
 ## v1.0.3 (2026-11-18)
