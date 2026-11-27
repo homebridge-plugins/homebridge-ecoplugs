@@ -4,7 +4,7 @@
 [![npm downloads](https://badgen.net/npm/dt/@homebridge-plugins/homebridge-ecoplugs?label=downloads)](https://www.npmjs.com/package/@homebridge-plugins/homebridge-ecoplugs) 
 [![license](https://badgen.net/github/license/homebridge-plugins/homebridge-ecoplugs)](LICENSE)
 
-<p>The Homebridge plugin for ECO Plugs and WION Wi‑Fi switches. **All communication is local‑network only** (uses UDP broadcasts) and requires the plugin to be on the same subnet as the devices; it does not talk to the EcoPlug cloud servers like the official app.</p>
+The Homebridge plugin for ECO Plugs and WION Wi‑Fi switches. **All communication is local‑network only** (uses UDP broadcasts) and requires the plugin to be on the same subnet as the devices; it does not talk to the EcoPlug cloud servers like the official app.
 
 > **New or factory-reset legacy device that isn't on your Wi-Fi yet?** This plugin only controls devices that are already on your network. To get an older ECO Plugs / WiOn device onto your 2.4 GHz Wi-Fi without the original app, use the independent [ecoplugs-wion-initial-setup](https://github.com/djcarlin/ecoplugs-wion-initial-setup) tool (macOS app and Python CLI for Windows and Linux), then come back here. See [Initial Wi-Fi setup](#initial-wi-fi-setup).
 
@@ -140,19 +140,21 @@ A device with a `host` and `protocol` left on `auto` is treated as KAB, so set `
 | `name`      | yes      | `EcoPlug` | Display name in Homebridge logs                  |
 | `localOnly` | no       | `true`    | Only allow private LAN addresses for discovery/control |
 | `port`      | no       | `9000`    | Incoming UDP port for legacy status messages     |
+| `enabled`   | no       | `true`    | Set to `false` to skip discovery, beacon listening and status polling |
 
 ### Advanced options
 
 | Parameter              | Default | Description                                                                                              |
 |------------------------|---------|----------------------------------------------------------------------------------------------------------|
-| `pollingInterval`      | `10`    | Seconds between status polls for **legacy** devices (`0` disables polling)                               |
+| `pollingInterval`      | `10`    | Seconds between status polls for **legacy** devices (`0` disables polling, and with it the inactive and removal timeouts below) |
 | `discoverInterval`     | `60`    | Seconds between legacy discovery broadcasts (`0` disables)                                               |
 | `deviceInactiveTimeout`| `180`   | Mark accessory unavailable after this many seconds without response (`0` disables)                      |
 | `deviceRemoveTimeout`  | `0`     | Remove accessory after this many seconds without response (`0` disables)                                |
-| `kabMaxFailures`       | `15`    | **(KAB only)** Give up on additional status queries after this many consecutive timeouts; resets on success or discovery |
 | `kabBindPort`          | `9090`  | **(KAB only)** UDP source port to bind for outgoing commands (`0` lets OS choose ephemeral port)       |
 | `defaultServiceType`   | `switch` | HomeKit service for newly added devices: `switch` or `outlet`. Devices already in HomeKit keep their current type |
 | `bindAddress`          | *(unset)* | IPv4 address of the local network interface to use for KAB commands and legacy discovery/status. Leave unset to let the OS choose. See [multiple network interfaces](#troubleshooting) |
+| `kabSkipBeaconAck`     | `false` | **(KAB only)** Do not acknowledge received beacons. Enable this if an outlet toggles on its own          |
+| `debug`                | `false` | Show verbose protocol logs without running Homebridge in debug mode                                      |
 
 ### Per-device options (`devices[]`)
 
@@ -162,10 +164,9 @@ A device with a `host` and `protocol` left on `auto` is treated as KAB, so set `
 | `host`        | no       | Static IP to seed device at startup. With `protocol: "legacy"` it is also probed directly on every discovery cycle |
 | `protocol`    | no       | `auto` (default), `legacy`, or `kab`                                |
 | `serviceType` | no       | `switch` or `outlet` for this device (default: `defaultServiceType`)  |
-| `commandPort` | no       | Override the port the device listens on for commands (default `1022` KAB; legacy uses the port advertised during discovery, usually `80`). This is the device's port, not the local source port (`kabBindPort`); normally leave it unset |
+| `commandPort` | no       | Port the device listens on for commands; normally leave it unset. Legacy devices use the port advertised during discovery (usually `80`), or this value if set. KAB devices use this value (default `1022`) only until a beacon arrives, then the beacon's port. This is not the local source port (`kabBindPort`) |
 | `kabKey`      | no       | KAB credential key (usually auto-populated from beacon)             |
 | `kabPass`     | no       | KAB command password (default `111111`)                             |
-| `kabMaxFailures`| no     | Override global max consecutive status failures for this device     |
 
 ## Protocol and Port Support
 
@@ -235,7 +236,7 @@ sudo ufw allow out 6000/udp   # KAB fallback port A
 - Intermittent `EHOSTUNREACH` errors, or devices only found some of the time, on a host with **more than one network interface** on the same subnet (for example Ethernet plus Wi-Fi, or Wi-Fi that kept a stale IP after dropping off):
   - Set `bindAddress` (under Advanced Options) to the IPv4 address of the interface that actually reaches the devices, e.g. `"bindAddress": "192.168.1.10"`
   - Use a static IP or DHCP reservation for that address and restart Homebridge if it ever changes
-  - The address must belong to the machine running Homebridge; an invalid or unassigned address is reported in the log and the affected sockets will not work until it is fixed
+  - The address must belong to the machine running Homebridge. A value that is not an IPv4 address is ignored with a warning and the default binding is used. A valid address that is not assigned to the machine is reported in the log, and the affected sockets will not work until it is fixed
   - KAB beacons are broadcasts, so the beacon listener always listens on all interfaces regardless of this setting
   - Legacy discovery broadcasts to every interface's own subnet (for example `192.168.1.255`) as well as `255.255.255.255`. With `bindAddress` set it only broadcasts to that interface's subnet
   - If legacy devices stop being discovered, or stop reporting status, after you set `bindAddress`, remove the setting again. A socket bound to one address cannot receive broadcast packets, so firmware that replies by broadcast would be missed. Please open an issue with the device model and firmware if this happens
@@ -247,4 +248,5 @@ sudo ufw allow out 6000/udp   # KAB fallback port A
 - NorthernMan54 — Device auto-discovery
 - askovi — Tested WiOn Outdoor Outlet 50049
 - JeffreyStocker — Additional addons
-- IWCaldwell - KAB Protocal implementation, Homebridge V2 support and conversion to TypeScript
+- IWCaldwell - KAB Protocol implementation, Homebridge V2 support and conversion to TypeScript
+- marckagan — `bindAddress` option and static-IP legacy command port fix

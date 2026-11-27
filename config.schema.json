@@ -48,19 +48,9 @@
       "pollingInterval": {
         "title": "Status Polling Interval (seconds)",
         "type": "number",
-        "description": "How often to poll devices for status. Use 0 to disable. Default: 10",
+        "description": "How often to poll legacy devices for status. 0 disables polling, which also disables the inactive and remove device timeouts. Default: 10",
         "placeholder": 10,
         "minimum": 0,
-        "condition": {
-          "functionBody": "return model.advanceOptions === true;"
-        }
-      },
-      "kabCommandTimeoutMs": {
-        "title": "KAB Command Timeout (ms)",
-        "type": "number",
-        "default": 2000,
-        "minimum": 200,
-        "description": "Timeout in milliseconds to wait for KAB command responses. Increase if your network is slow.",
         "condition": {
           "functionBody": "return model.advanceOptions === true;"
         }
@@ -81,17 +71,7 @@
         "type": "string",
         "pattern": "^$|^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$",
         "placeholder": "192.168.1.10",
-        "description": "IPv4 address of the local network interface to use for KAB commands and legacy discovery/status (e.g. your host's wired LAN address). Leave blank to let the OS choose. On multi-homed hosts — e.g. a machine with both Ethernet and Wi-Fi live on the same subnet, or a Wi-Fi adapter that keeps a stale IP after losing association — the OS can intermittently route traffic out the wrong (or dead) interface, producing EHOSTUNREACH errors. Setting this to your primary interface's IP avoids that. The address must belong to this host (use a static IP or a DHCP reservation) and Homebridge must be restarted if it changes. KAB beacons are broadcasts, so the beacon listener always listens on all interfaces.",
-        "condition": {
-          "functionBody": "return model.advanceOptions === true;"
-        }
-      },
-      "kabMaxFailures": {
-        "title": "KAB Max Consecutive Failures",
-        "type": "number",
-        "default": 15,
-        "minimum": 1,
-        "description": "After this many consecutive status timeouts the plugin will stop querying the device (periodic polling applies only to legacy devices) until a successful response or discovery resets the counter.",
+        "description": "IPv4 address of this Homebridge host to use for KAB commands and legacy discovery/status. Leave blank unless the host has more than one network interface (such as Ethernet and Wi-Fi) and you see EHOSTUNREACH errors. Restart Homebridge if the address changes, and clear this if legacy devices stop responding.",
         "condition": {
           "functionBody": "return model.advanceOptions === true;"
         }
@@ -110,17 +90,6 @@
         "type": "boolean",
         "default": false,
         "description": "Show verbose KAB/legacy protocol logs without running Homebridge in debug mode.",
-        "condition": {
-          "functionBody": "return model.advanceOptions === true;"
-        }
-      },
-      "kabDiscoveryAttempts": {
-        "title": "KAB Discovery Attempts",
-        "type": "number",
-        "default": 3,
-        "minimum": 1,
-        "maximum": 30,
-        "description": "How many discovery probe packets to send when performing KAB discovery.",
         "condition": {
           "functionBody": "return model.advanceOptions === true;"
         }
@@ -158,10 +127,7 @@
       "devices": {
         "title": "Per-Device Configuration",
         "type": "array",
-        "description": "Manually specify devices by IP address, or override KAB protocol credentials. Useful for devices with static IPs.",
-        "condition": {
-          "functionBody": "return model.advanceOptions === true;"
-        },
+        "description": "Optional. Devices are normally discovered automatically. Add an entry to give a device a static IP address or to override its settings.",
         "items": {
           "type": "object",
           "dependencies": {
@@ -188,10 +154,20 @@
               "type": "string",
               "description": "Static IP address of the device. Set this to connect immediately without waiting for a device beacon on port 10228. For a legacy device (Protocol set to Legacy) it is also probed directly, so it is found even where broadcasts do not reach Homebridge."
             },
+            "protocol": {
+              "title": "Protocol",
+              "type": "string",
+              "description": "Leave on auto (or blank) to detect the protocol from discovery. A device with an IP Address set is treated as KAB unless you choose legacy here, so choose legacy for an older (FtNetManager) device with a static IP.",
+              "enum": [
+                "auto",
+                "legacy",
+                "kab"
+              ]
+            },
             "commandPort": {
               "title": "Command Port",
               "type": "number",
-              "description": "Port the device listens on for commands (default: 1022 for KAB, 80 for legacy). Not the local source port (see KAB Bind Port); normally leave blank.",
+              "description": "Port the device listens on for commands; normally leave blank. Legacy devices use the port they advertise (usually 80), or this value if set. KAB devices use this value (default 1022) only until a beacon arrives, then the beacon's port. Not the local source port (KAB Source Bind Port).",
               "minimum": 1,
               "maximum": 65535
             },
@@ -204,16 +180,6 @@
               "title": "KAB Device Password",
               "type": "string",
               "description": "Device password for KAB commands (default: 111111)"
-            },
-            "protocol": {
-              "title": "Protocol",
-              "type": "string",
-              "description": "Force a specific protocol; leave as 'auto' to let the plugin decide",
-              "enum": [
-                "auto",
-                "legacy",
-                "kab"
-              ]
             }
           }
         }
