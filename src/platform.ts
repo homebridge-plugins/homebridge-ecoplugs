@@ -36,9 +36,6 @@ import {
     LEGACY_DEFAULT_PORT,
     type EcoPlugConfig,
     type DeviceConfig,
-    DEFAULT_KAB_COMMAND_TIMEOUT_MS,
-    DEFAULT_KAB_DISCOVERY_ATTEMPTS,
-    DEFAULT_KAB_MAX_FAILURES,
 } from './settings.js';
 
 // how long after issuing a KAB command we suppress any status query
@@ -83,10 +80,9 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
     private readonly deviceOverrideMap:    Map<string, DeviceConfig>;
     private staticDevices:                 DeviceConfig[] = [];
     private readonly statusInflight:       Map<string, Promise<void>> = new Map();
+    /** devices already warned that their configured commandPort differs from the advertised one */
+    private readonly portOverrideWarned:   Set<string> = new Set();
     // discovery handshake and beacon-id handling are now fixed behaviours
-    private readonly kabCommandTimeoutMsGlobally: number;
-    private readonly kabDiscoveryAttemptsGlobally: number;
-    private readonly kabMaxFailuresGlobally: number;
     private readonly skipBeaconAckGlobally: boolean;
     /** service type used when adding accessories unless overridden */
     private readonly defaultServiceType: 'outlet' | 'switch';
@@ -119,9 +115,6 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
         // the plugin always skips the KAB discovery handshake and always
         // uses the beacon-derived integer id; the old config options have
         // been removed.
-        this.kabCommandTimeoutMsGlobally = cfg.kabCommandTimeoutMs ?? DEFAULT_KAB_COMMAND_TIMEOUT_MS;
-        this.kabDiscoveryAttemptsGlobally = cfg.kabDiscoveryAttempts ?? DEFAULT_KAB_DISCOVERY_ATTEMPTS;
-        this.kabMaxFailuresGlobally = cfg.kabMaxFailures ?? DEFAULT_KAB_MAX_FAILURES;
         this.skipBeaconAckGlobally = cfg.kabSkipBeaconAck ?? false;
         // Service type for newly added devices.  When unset this matches the default the
         // config UI shows (switch); it previously fell back to outlet, so a config saved
@@ -261,6 +254,13 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             accessory.context.port = override.commandPort ?? LEGACY_DEFAULT_PORT;
         }
 
+        // Earlier versions saved a configured 9090 with the accessory.  It is ignored now (see
+        // kabConfiguredPort), so the saved copy must not be used before the next beacon either.
+        if (accessory.context.protocol === 'kab' && Number(override?.commandPort) === KAB_COMMAND_PORT
+            && accessory.context.kabCommandPort === KAB_COMMAND_PORT) {
+            accessory.context.kabCommandPort = KAB_DEVICE_PORT;
+        }
+
         this.cachedAccessories.set(accessory.context.id, accessory);
         this.configureServices(accessory);
     }
@@ -336,6 +336,7 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             }
             const idInt = parseDeviceIdInt(d.id);
             const isLegacy = d.protocol === 'legacy';
+            const kabPort = (isLegacy ? undefined : this.kabConfiguredPort(d.id, d)) ?? KAB_DEVICE_PORT;
             const device: DeviceInfo = {
                 id:             d.id,
                 name:           d.id,           // updated when beacon arrives
@@ -345,17 +346,14 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
                 // protocol:"legacy" devices, silently sending legacy-formatted
                 // packets to the wrong port with no error (legacy setPower/
                 // getStatus are fire-and-forget, so the failure was invisible).
-                port:           d.commandPort ?? (isLegacy ? LEGACY_DEFAULT_PORT : KAB_DEVICE_PORT),
+                port:           isLegacy ? d.commandPort ?? LEGACY_DEFAULT_PORT : kabPort,
                 protocol:       (isLegacy ? 'legacy' : 'kab'),
                 kabDeviceIdInt: isNaN(idInt) ? 0 : idInt,
                 kabKey:         d.kabKey   ?? '',
                 kabPass:        d.kabPass  ?? '',
-                kabCommandPort: d.commandPort ?? KAB_DEVICE_PORT,
+                kabCommandPort: kabPort,
                 kabSkipDiscovery: true,
                 kabUseBeaconId: true,
-                kabCommandTimeoutMs: d.kabCommandTimeoutMs ?? this.kabCommandTimeoutMsGlobally,
-                kabMaxFailures: d.kabMaxFailures ?? this.kabMaxFailuresGlobally,
-                kabDiscoveryAttempts: d.kabDiscoveryAttempts ?? this.kabDiscoveryAttemptsGlobally,
             };
             this.log.info(`Seeding static IP device: ${d.id} @ ${d.host}`);
             this.handleDiscoveredDevice(device, 'static-config');
@@ -438,14 +436,11 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             if (override.kabPass && !device.kabPass) {
                 device.kabPass = override.kabPass;
             }
-            if (override.commandPort) {
-                device.kabCommandPort = override.commandPort;
-            }
-            if (override.kabMaxFailures !== undefined) {
-                device.kabMaxFailures = override.kabMaxFailures;
-            }
             if (override.protocol && override.protocol !== 'auto') {
                 device.protocol = override.protocol as 'legacy' | 'kab';
+            }
+            if (device.protocol === 'kab') {
+                device.kabCommandPort = this.kabConfiguredPort(deviceId, override) ?? device.kabCommandPort;
             }
             if (override.serviceType) {
                 (device as any).serviceType = override.serviceType;
@@ -472,6 +467,16 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             // sendWithRetry() can skip the expensive/fussy discovery handshake.
             device.kabLanIp = device.host;
             device.kabLanPort = device.port;
+
+            // say so, once, when a configured port replaces the one the device itself advertises
+            const configured = this.kabConfiguredPort(device.id, override);
+            if (configured && configured !== device.port && !this.portOverrideWarned.has(device.id)) {
+                this.portOverrideWarned.add(device.id);
+                this.log.warn(
+                    `${device.id}: sending commands to the configured commandPort ${configured}, not port ${device.port} ` +
+                    'advertised by the device. Remove commandPort if the device does not respond',
+                );
+            }
         }
 
         const existing = this.cachedAccessories.get(device.id);
@@ -559,15 +564,10 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             // discovery is always skipped and beacon ID always used
             acc.context.kabSkipDiscovery = true;
             acc.context.kabUseBeaconId = true;
-            acc.context.kabCommandTimeoutMs = device.kabCommandTimeoutMs;
-            acc.context.kabDiscoveryAttempts = device.kabDiscoveryAttempts;
             // propagate new beacon offset if available
             if (device.kabBeaconOffset264 !== undefined) {
                 acc.context.kabBeaconOffset264 = device.kabBeaconOffset264;
             }
-            acc.context.kabMaxFailures = device.kabMaxFailures ?? this.kabMaxFailuresGlobally;
-            // received an updated beacon; clear any past failure tally so we try again
-            acc.context.kabFailureCount = 0;
         }
     }
 
@@ -598,11 +598,8 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             kabCommandPort: device.kabCommandPort,
             kabSkipDiscovery: true,
             kabUseBeaconId: true,
-            kabCommandTimeoutMs: device.kabCommandTimeoutMs,
             // store the beacon offset field which is crucial for KAB encryption
             kabBeaconOffset264: device.kabBeaconOffset264,
-            kabFailureCount: 0,
-            kabMaxFailures: device.kabMaxFailures ?? this.kabMaxFailuresGlobally,
             serviceType:    svcType,
         };
 
@@ -641,6 +638,28 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
     }
 
     // Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * The configured `commandPort` to apply to a KAB device, if any.
+     *
+     * 9090 is ignored (with one warning): it is the plugin's own source port, which older
+     * documentation showed as the command port.  That did no lasting harm while the port in
+     * a beacon replaced it, but applying it would now cut off control of the device.
+     */
+    private kabConfiguredPort(deviceId: string, override: DeviceConfig | undefined): number | undefined {
+        const port = Number(override?.commandPort) || undefined;
+        if (port !== KAB_COMMAND_PORT) {
+            return port;
+        }
+        if (!this.portOverrideWarned.has(deviceId)) {
+            this.portOverrideWarned.add(deviceId);
+            this.log.warn(
+                `${deviceId}: ignoring commandPort ${KAB_COMMAND_PORT} for this KAB device. It is the plugin's own ` +
+                'source port, shown here by mistake in older documentation. Remove commandPort from the device settings',
+            );
+        }
+        return undefined;
+    }
 
     /**
      * Return the service instance for a given accessory, creating it if absent.
@@ -717,6 +736,11 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
                 throw new Error('KAB device has previously failed to obey commands');
             }
 
+            // A configured commandPort wins over the port the device advertises.  It is read
+            // from the config for every command, so changing or removing it leaves nothing stale.
+            const id = String(ctx.id);
+            ctx.kabPortOverride = this.kabConfiguredPort(id, this.deviceOverrideMap.get(id.toUpperCase()));
+
             const desired = on;
             // track that we're actively retrying so polls/back-to-back commands
             // can be suppressed.
@@ -782,9 +806,6 @@ export class EcoPlugPlatform implements DynamicPlatformPlugin {
             } finally {
                 delete (ctx as any).kabRetrying;
             }
-
-            // reset failure count regardless; status check above updates 'on'
-            (ctx as any).kabFailureCount = 0;
         } else {
             this.legacyManager.setPower(ctx as unknown as DeviceInfo, on);
         }

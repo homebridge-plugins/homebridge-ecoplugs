@@ -28,9 +28,10 @@ All notable changes to `@homebridge-plugins/homebridge-ecoplugs` will be documen
 - docs: add an "Initial Wi-Fi setup" section, with a callout at the top of the README and a troubleshooting pointer, for the independent ecoplugs-wion-initial-setup tool for onboarding legacy devices after a factory reset, and note the other brand names (Woods WiOn, WorkChoice, DEWENWILS) the ECO Plugs family was sold under
 - config UI: fix the "Config validation failed" warning caused by the blank per-device entry the form adds on its own, even with Advanced Options hidden. A device ID is still required once any other device setting (other than Protocol) is filled in
 - add tests for command ports, protocol switching, the KAB socket and beacon listener, `bindAddress`, the legacy discovery probe and request packet layout, and legacy discovery targets (per-interface broadcasts and direct probes)
-- config UI: remove the KAB Command Timeout, KAB Max Consecutive Failures and KAB Discovery Attempts fields, which had no lasting effect. Existing configs that contain these settings still load
+- a per-device `commandPort` now stays in effect for KAB devices; previously the port in the device's beacon replaced it, and a warning is now logged when the two differ. `9090` (the plugin's own source port, which earlier documentation showed for KAB devices) is ignored for KAB devices with a warning, so configs that copied it keep working
+- remove the `kabCommandTimeoutMs`, `kabMaxFailures` and `kabDiscoveryAttempts` settings from the config UI and the code. The last two did nothing, and the timeout only applied to a static-IP device until its first beacon; KAB commands always wait 4 seconds for a response. Existing configs that contain these settings still load
 - config UI: Per-Device Configuration no longer requires Show Advanced Options, Protocol now sits under IP Address and says when to choose `legacy`, and the Command Port, Local Bind Address and polling interval descriptions are clearer
-- docs: correct how an invalid `bindAddress` is handled and when a KAB `commandPort` applies, document `enabled`, `debug` and `kabSkipBeaconAck`, remove `kabMaxFailures`, and credit @marckagan
+- docs: correct how an invalid `bindAddress` is handled, document `enabled`, `debug` and `kabSkipBeaconAck`, remove `kabMaxFailures`, and credit @marckagan
 - update dev dependencies and refresh the lockfile; remove `nodemon` (`npm run watch` now uses `tsc --watch`), which clears the `npm audit` findings
 
 ## v1.0.3 (2026-11-18)

@@ -167,7 +167,7 @@
             "commandPort": {
               "title": "Command Port",
               "type": "number",
-              "description": "Port the device listens on for commands; normally leave blank. Legacy devices use the port they advertise (usually 80), or this value if set. KAB devices use this value (default 1022) only until a beacon arrives, then the beacon's port. Not the local source port (KAB Source Bind Port).",
+              "description": "Port the device listens on for commands; normally leave blank so the port the device advertises is used (usually 80 for legacy, 1022 for KAB). A value set here is always used, except 9090 on a KAB device: that is the plugin's own source port, so it is ignored. Not the local source port (KAB Source Bind Port).",
               "minimum": 1,
               "maximum": 65535
             },

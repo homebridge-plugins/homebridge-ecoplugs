@@ -164,7 +164,7 @@ A device with a `host` and `protocol` left on `auto` is treated as KAB, so set `
 | `host`        | no       | Static IP to seed device at startup. With `protocol: "legacy"` it is also probed directly on every discovery cycle |
 | `protocol`    | no       | `auto` (default), `legacy`, or `kab`                                |
 | `serviceType` | no       | `switch` or `outlet` for this device (default: `defaultServiceType`)  |
-| `commandPort` | no       | Port the device listens on for commands; normally leave it unset. Legacy devices use the port advertised during discovery (usually `80`), or this value if set. KAB devices use this value (default `1022`) only until a beacon arrives, then the beacon's port. This is not the local source port (`kabBindPort`) |
+| `commandPort` | no       | Port the device listens on for commands; normally leave it unset so the port the device advertises is used (usually `80` for legacy, `1022` for KAB). A value set here is always used, except `9090` on a KAB device, which is ignored with a warning (older versions of this README showed it by mistake). This is not the local source port (`kabBindPort`) |
 | `kabKey`      | no       | KAB credential key (usually auto-populated from beacon)             |
 | `kabPass`     | no       | KAB command password (default `111111`)                             |
 
@@ -229,7 +229,7 @@ sudo ufw allow out 6000/udp   # KAB fallback port A
 - Accessory shows no response:
   - Check firewall rules above
   - Verify `localOnly` is not blocking a non-private address
-  - Verify `commandPort` override for that device
+  - Remove any `commandPort` override for that device, or check it is correct
 - Device disappears frequently:
   - Increase `deviceInactiveTimeout`
   - Leave `deviceRemoveTimeout` at `0` unless you explicitly want auto-removal

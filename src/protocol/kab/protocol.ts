@@ -31,6 +31,7 @@ import { kabSocket } from './socket.js';
 
 export const KAB_COMMAND_TIMEOUT_MS = DEFAULT_KAB_COMMAND_TIMEOUT_MS;
 export const KAB_COMMAND_RETRIES    = 3;
+const KAB_DISCOVERY_ATTEMPTS        = 3;
 
 export interface KabCommandResult {
     ok: boolean;
@@ -89,10 +90,9 @@ export async function performDiscovery(device: DeviceInfo, log?: (msg: string) =
 
     log?.(`KAB discovery → ${beaconHost}:${beaconPort}  (cmdCode=23 subtype=105)`);
 
-    const timeoutMs = device.kabCommandTimeoutMs ?? KAB_COMMAND_TIMEOUT_MS;
+    const timeoutMs = KAB_COMMAND_TIMEOUT_MS;
 
-    const maxAttempts = device.kabDiscoveryAttempts ?? 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    for (let attempt = 1; attempt <= KAB_DISCOVERY_ATTEMPTS; attempt++) {
         try {
             const discBuf = buildDiscoveryHandshake(idInt, key, pass, device.kabBeaconOffset264, attempt);
             // filter out any packets that are not parseable discovery responses
@@ -157,11 +157,12 @@ async function sendWithRetry(
     }
 
     // Use discovered LAN address if available; fall back to beacon host/port.
+    // A configured commandPort takes precedence over every advertised port.
     const host = device.kabLanIp ?? device.host;
-    const port = device.kabLanPort ?? device.kabCommandPort ?? device.port;
+    const port = device.kabPortOverride ?? device.kabLanPort ?? device.kabCommandPort ?? device.port;
     let lastError: Error | undefined;
 
-    const timeoutMs = device.kabCommandTimeoutMs ?? KAB_COMMAND_TIMEOUT_MS;
+    const timeoutMs = KAB_COMMAND_TIMEOUT_MS;
     const idIntInfo = (device.kabUseBeaconId ? (device.kabDeviceIdInt ?? 0) : parseDeviceIdInt(device.id) || (device.kabDeviceIdInt ?? 0));
     const b264 = device.kabBeaconOffset264 ?? 0;
     const logMsg = `KAB sendWithRetry → ${device.id} @ ${host}:${port}` +

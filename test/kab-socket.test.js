@@ -80,8 +80,13 @@ test('an unanswered command does not leave the shared socket on an ephemeral sou
   const device = {
     id: 'ECO-78ABCDEF', name: 'Plug', host: '192.168.1.50', port: 1022, protocol: 'kab',
     kabKey: 'key', kabPass: '111111', kabDeviceIdInt: 0xABCDEF, kabCommandPort: 1022,
-    kabSkipDiscovery: true, kabUseBeaconId: true, kabCommandTimeoutMs: 50,
+    kabSkipDiscovery: true, kabUseBeaconId: true,
   };
+  // shorten the response timeout so the retries finish quickly
+  const realRequest = kabSocket.sendAndReceive;
+  t.mock.method(kabSocket, 'sendAndReceive', function (buf, host, port, timeoutMs, filter) {
+    return realRequest.call(this, buf, host, port, 50, filter);
+  });
   const result = await kabSetPower(device, true);
   assert.equal(result.ok, false);
   assert.equal(kabSocket.getBindPort(), configured, 'configured source port must be restored');

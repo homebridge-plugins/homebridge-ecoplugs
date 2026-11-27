@@ -41,11 +41,8 @@ export const DEFAULT_SERVICE_TYPE: 'outlet' | 'switch' = 'switch';
 
 export const DEFAULT_LOCAL_ONLY    = true;
 export const DEFAULT_ENABLED       = true;
-/** Default KAB command timeout (ms) used when not overridden in config/device */
+/** How long to wait for a response to a KAB command (ms). */
 export const DEFAULT_KAB_COMMAND_TIMEOUT_MS = 4000;
-/** Default number of discovery attempts the plugin performs per discovery run. */
-export const DEFAULT_KAB_DISCOVERY_ATTEMPTS = 3;
-export const DEFAULT_KAB_MAX_FAILURES        = 15; // how many consecutive status errors before giving up
 
 /** Per‑device protocol preference. */
 export type ProtocolPreference = 'auto' | 'legacy' | 'kab';
@@ -70,20 +67,18 @@ export interface DeviceConfig {
      * updated as soon as a beacon is received from the device.
      */
     host?: string;
-    /** Override command destination port on the device (default: 1022 for KAB, 80 for legacy). */
+    /**
+     * Port to send commands to on the device.  Used whenever set, except 9090 on a KAB device,
+     * which is ignored; otherwise the port the device advertises (fallback: 1022 for KAB, 80
+     * for legacy).
+     */
     commandPort?: number;
-    /** Per-device override for maximum consecutive status failures. */
-    kabMaxFailures?: number;
     /** Override credential/key from beacon (default: auto from beacon). */
     kabKey?: string;
     /** Override password for KAB commands (default: "111111"). */
     kabPass?: string;
     /** Force a specific protocol (default: "auto"). */
     protocol?: ProtocolPreference;
-    /** Per-device override for KAB command timeout (ms) */
-    kabCommandTimeoutMs?: number;
-    /** Per-device override for number of discovery attempts */
-    kabDiscoveryAttempts?: number;
     /** Per-device flag to suppress beacon ACK packet */
     kabSkipBeaconAck?: boolean;
 }
@@ -103,12 +98,6 @@ export interface EcoPlugConfig {
     deviceRemoveTimeout?: number;
     /** Per‑device overrides. */
     devices?: DeviceConfig[];
-    /** Global KAB command timeout in milliseconds. */
-    kabCommandTimeoutMs?: number;
-    /** Global KAB discovery attempts to use when performing discovery. */
-    kabDiscoveryAttempts?: number;
-    /** Maximum consecutive status failures before skipping further polls. */
-    kabMaxFailures?: number;
     /** Bind port for outgoing KAB commands (0 for ephemeral). */
     kabBindPort?: number;
     /**

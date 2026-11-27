@@ -53,12 +53,8 @@ export interface DeviceInfo {
     kabSkipDiscovery?: boolean;
     /** When true (default), use the raw beacon integer id (offset 36) for commands */
     kabUseBeaconId?: boolean;
-    /** Per-device override for KAB command timeout (ms) */
-    kabCommandTimeoutMs?: number;
-    /** Per-device override for number of discovery attempts */
-    kabDiscoveryAttempts?: number;
-    /** Per-device override for maximum consecutive status failures */
-    kabMaxFailures?: number;
+    /** The configured `commandPort`; takes precedence over any port the device advertises. */
+    kabPortOverride?: number;
     /** Internal: whether we've previously sent a priming burst to this device */
     kabPrimed?: boolean;
 }
